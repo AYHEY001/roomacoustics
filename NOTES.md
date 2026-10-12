@@ -171,3 +171,70 @@ test "说明文字" {
 - 评价区间的有效性判据怎么暴露给命令行用户
 - 模态频率检测是否需要依赖 `MoonSpectrum` 的 FFT，还是解析式列举就够
   （当前实现倾向解析式列举 + 可选的 FFT 峰值交叉验证）
+---
+
+## 2026-10-12 · CI 排查（绕了五轮，值得记）
+
+本地 `moon fmt --check` 通过，GitHub Actions 上却失败。查下来根因比预想的深。
+
+### 坑 13：新版 moon fmt 有两处行为变化，不止一处
+
+本机 `moon 0.1.20260920`，CI 装的是最新版 `0.1.20261012`。差异有：
+
+1. `Int` 被规范化成 `Int32`
+2. 超过 ~75 字符的参数列表**拆成多行**
+
+只发现第1 处时，我写了三版脚本去"容忍"它 —— 方向就错了。
+**差异本身会随工具链升级消失，正确做法是让代码跟上新版格式**，
+而不是在 CI 里想办法忽略它。
+
+### 坑 14：锁工具链版本这条路走不通
+
+试过在 CI 里锁版本，两个障碍：
+- `install/unix.sh` 的版本是**位置参数**（`version=${ARGUMENTS[0]}`），
+  不是 `--version` 选项 —— 写成 `--version 0.1.x` 会被当未知参数，静默装最新版
+- 历史版本二进制已从发布服务器清理，实测 `binaries/0.1.20260920/...` 返回
+  **HTTP 403**，只有 `latest` 和 `nightly` 可下
+
+### 坑 15：逐行配对统计出现次数来判"差异是否无害"，会数错
+
+写"把 diff 两侧的 Int32 还原成 Int，再数每行出现次数是否为偶数"来判断无害差异，
+结果同一行文本在文件里出现两次时（`sample_rate : Int,`）计数是 4，
+次数稍不对称就误判成有害。**改成文件级归一化比对**才可靠。
+
+教训：这类"配平"判断，别用计数，用整体比对。
+
+### 坑 16：注释里提到 Int32 也会被还原，破坏比对
+
+第二版里把 diff 两侧所有 `Int32` 还原成 `Int`，但注释里本来就解释过
+"新版会把 Int 规范化成 Int32"—— 还原后与另一侧对不上，误判为有害。
+最后干脆不做任何"无害判定"，直接统一到新版格式。
+
+### 装新版工具链（Windows，隔离目录）
+
+```bash
+mkdir -p ~/.workbuddy/binaries/moonbit-latest && cd $_
+curl -sL https://cli.moonbitlang.com/binaries/latest/moonbit-windows-x86_64.zip -o m.zip
+unzip -o -q m.zip
+# 标准库要单独下（老坑：官方包不含 lib/core）
+curl -sL https://cli.moonbitlang.com/cores/core-latest.zip -o core.zip
+unzip -o -q core.zip -d lib/core && mv lib/core/core/* lib/core/ && rmdir lib/core/core
+cd lib/core && moon bundle --target wasm      # 漏这步每个项目都报 Cannot load the core file
+```
+
+之后 `export PATH="/c/Users/admin/.workbuddy/binaries/moonbit-latest/bin:$PATH"`
+和 `export MOON_HOME="C:/Users/admin/.workbuddy/binaries/moonbit-latest"`，
+**本项目的开发环境应该用这套新版**，旧版留着以防需要对比。
+
+新版下 `moon test` 38/38 全绿，`moon fmt --check` 通过，
+CI 全部 11 步 success。
+
+### 其他踩到的
+
+- 字符串插值必须写 `\{expr}`（反斜杠转义），写 `{expr}` 会被当普通字符。
+  CLI 输出统一改用字符串拼接，避开这个坑。
+- `Json` 类型不是 `pub`，外部包写不出 `@json.Json` 的类型标注，
+  也用不了 `@json.Object(...)` 形式的模式匹配 —— 得用 `if j is Object(obj)`，
+  且 `Number` 有两个字段，必须写 `Number(n, ..)`。
+- `@lib` 是**包别名**不是"这是库"的标记，要显式命名：
+  `"haiou/roomacoustics" @ra` → 源码里用 `@ra.foo()`。
