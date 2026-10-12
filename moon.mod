@@ -28,4 +28,5 @@ description = "Room acoustics measurements in MoonBit: compute reverberation tim
 import {
   "moonbitlang/x@0.5.5",
   "Ridge-Lab/moonwavkit@0.1.3",
+  "chgttyyr/MoonSpectrum@0.2.2",
 }

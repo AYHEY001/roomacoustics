@@ -112,11 +112,13 @@ PYTHONIOENCODING=utf-8 python docs/check_ecosystem.py
 | 环节 | 谁做 | 本项目的关系 |
 |---|---|---|
 | WAV 容器解析 / PCM 解码 | `Ridge-Lab/moonwavkit@0.1.3` | **依赖**，不实现 |
-| FFT / 功率谱 | `MoonSpectrum` | **依赖**，暂未接入 |
+| FFT / 窗函数 | `chgttyyr/MoonSpectrum@0.2.2` | **依赖**，不实现 |
 | Schroeder 能量衰减曲线反演 | 本项目 | ✅ 原创实现 |
 | EDT / T20 / T30 拟合 | 本项目 | ✅ 原创实现 |
+| 噪声底估计与区间有效性校验 | 本项目 | ✅ 原创实现 |
 | Sabine 解析估算 | 本项目 | ✅ 原创实现 |
 | 矩形房间模态频率闭式解 | 本项目 | ✅ 原创实现 |
+| 频谱峰检测与模态配对 | 本项目 | ✅ 原创实现 |
 
 **措辞规范**：
 - ✅ "基于脉冲响应计算 RT60"
@@ -126,10 +128,16 @@ PYTHONIOENCODING=utf-8 python docs/check_ecosystem.py
 - ❌ "内置 FFT 实现"
 
 **依赖分层的实际落点**（不是口头声明）：
-核心库 `haiou/roomacoustics` 的 `moon.pkg` 里**没有** moonwavkit；
-它只接受 `Array[Double]` 与采样率，因而不绑定任何数据源。
-WAV 读取在 CLI 层（`cmd/main/wav_input.mbt`，约 60 行）。
-也就是说"不提供 WAV 解析"这件事在文件结构上可见，不只是 README 里的一句话。
+核心库 `haiou/roomacoustics` 的 `moon.pkg` 里**没有** moonwavkit、
+也**没有** MoonSpectrum —— 它只依赖标准库的 math/double/debug。
+库的接口只接受 `Array[Double]` 与采样率，因而不绑定任何数据源与实现。
+
+I/O 与频谱在 CLI 层：
+`cmd/main/wav_input.mbt`（约 70 行，用 moonwavkit）
+`cmd/main/modal_compare.mbt`（用 MoonSpectrum 做 FFT）。
+
+也就是说"不提供 WAV 解析、不实现 FFT"这两件事在
+**文件结构与依赖声明上可见**，不只是 README 里的一句话。
 
 **为什么边界是加分项**：官方验收标准明确写"更看重清晰边界"，
 "重复提交、拆分项目或仅做简单修改，不计入验收与奖励"。

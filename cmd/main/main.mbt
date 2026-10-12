@@ -322,14 +322,166 @@ fn cmd_modes(matches : @argparse.Matches) -> Unit {
   )
   println("声速      343 m/s (20 °C 干空气)")
   println("")
-  println("频率 (Hz)  (nx,ny,nz)  类型")
-  println("--------  ----------  ----")
-  let modes = @ra.list_modes(l, w, h, n)
+  // 有 --from-ir 时进入对照模式：需要更多高阶模态来匹配检测到的峰，
+  // 所以不按 --count 截断，而是取足够多让每个峰都能找到最近模态。
+  let from_ir = match matches.values.get("from-ir") {
+    Some(a) if a.length() > 0 => Some(a[0])
+    _ => None
+  }
+  match from_ir {
+    Some(path) => compare_modes_with_ir(path, l, w, h)
+    None => {
+      println("频率 (Hz)  (nx,ny,nz)  类型")
+      println("--------  ----------  ----")
+      let modes = @ra.list_modes(l, w, h, n)
+      let mut i = 0
+      while i < modes.length() {
+        println(freq_line(modes[i]))
+        i += 1
+      }
+    }
+  }
+}
+
+///|
+/// 预测模态与实测频谱的对照。
+///
+/// 这是本工具的交叉验证入口：解析式给出「应该有」哪些模态，
+/// 实测脉冲响应的频谱给出「实际出现」了哪些。两者对上，
+/// 说明解析模型描述了真实房间。
+fn compare_modes_with_ir(
+  path : String,
+  l : Double,
+  w : Double,
+  h : Double,
+) -> Unit {
+  let loaded : Result[IrData, String] = if is_wav_path(path) {
+    load_wav_ir(path)
+  } else {
+    let raw : Result[String, String] = Ok(
+      @fs.read_file_to_string(path, encoding="utf8"),
+    ) catch {
+      @fs.IOError(msg) => Err("读不了 " + path + "：" + msg)
+    }
+    match raw {
+      Ok(text) => parse_ir_json(text)
+      Err(msg) => Err(msg)
+    }
+  }
+  let data = match loaded {
+    Ok(d) => d
+    Err(e) => {
+      println("错误: " + e)
+      return
+    }
+  }
+  let n_fft = largest_pow2_at_most(data.ir.length())
+  if n_fft < 256 {
+    println(
+      "错误: 样本太少（" +
+      data.ir.length().to_string() +
+      " 点），无法做频谱分析",
+    )
+    return
+  }
+  let df = data.sample_rate.to_double() / n_fft.to_double()
+  println("实测频谱分析")
+  println("  数据源    " + path)
+  println(
+    "  FFT 长度  " +
+    n_fft.to_string() +
+    "（2 的幂；原信号 " +
+    data.ir.length().to_string() +
+    " 点）",
+  )
+  println("  分辨率    " + fmt(df, 3) + " Hz")
+  println("")
+  let peaks = detect_spectral_peaks(data.ir, data.sample_rate)
+  if peaks.length() == 0 {
+    println("  未在 50~500 Hz 内检测到显著峰。")
+    println(
+      "  可能原因：信号太短、能量太低，或该频段没有明显模态。",
+    )
+    return
+  }
+  // 取足够多的高阶模态参与配对
+  let modes = @ra.list_modes(l, w, h, 120)
+  let matches = match_peaks_to_modes(peaks, modes)
+  println("对照（峰 -> 最近的预测模态，容差 max(5Hz, 5%)）")
+  println("峰 (Hz)   突出度   预测模态 (Hz)  阶次        偏差 (Hz)")
+  println("--------  ------   -------------  ----------  ---------")
+  let mut matched = 0
   let mut i = 0
-  while i < modes.length() {
-    println(freq_line(modes[i]))
+  while i < matches.length() {
+    let m = matches[i]
+    let flag = if m.matched { "" } else { "  ← 未配对" }
+    if m.matched {
+      matched += 1
+    }
+    let mode_str = "(" +
+      m.nx.to_string() +
+      "," +
+      m.ny.to_string() +
+      "," +
+      m.nz.to_string() +
+      ")"
+    println(
+      pad_left(fmt(m.peak_freq, 2), 8) +
+      "  " +
+      pad_left(fmt(m.prominence, 2), 6) +
+      "   " +
+      pad_left(fmt(m.mode_freq, 2), 13) +
+      "  " +
+      pad_right(mode_str, 10) +
+      "  " +
+      pad_left(fmt(m.deviation, 2), 8) +
+      flag,
+    )
     i += 1
   }
+  println("")
+  println(
+    "配对率： " +
+    matched.to_string() +
+    "/" +
+    matches.length().to_string() +
+    " = " +
+    fmt(100.0 * matched.to_double() / matches.length().to_double(), 0) +
+    "%",
+  )
+  println("")
+  println(
+    "注意：配对率不是 100% 是正常的。单点声源到单点接收的传递函数里，",
+  )
+  println(
+    "     若声源或接收点落在某模态的节面上，该模态不被激励。",
+  )
+  println(
+    "     判定方向是「检测到的峰能否对应到预测模态」，",
+  )
+  println(
+    "     而不是「预测模态是否全部出现」—— 后者物理上做不到。",
+  )
+}
+
+///|
+/// 左对齐补空格。
+fn pad_right(s : String, width : Int32) -> String {
+  let mut out = s
+  while out.length() < width {
+    out = out + " "
+  }
+  out
+}
+
+///|
+/// 右对齐补空格。
+fn pad_left(s : String, width : Int32) -> String {
+  let mut out = s
+  while out.length() < width {
+    out = " " + out
+  }
+  out
 }
 
 ///|
@@ -392,6 +544,11 @@ fn main {
         @argparse.OptionArg("width", long="width", about="宽度 (m)"),
         @argparse.OptionArg("height", long="height", about="高度 (m)"),
         @argparse.OptionArg("count", long="count", about="列出前 N 个"),
+        @argparse.OptionArg(
+          "from-ir",
+          long="from-ir",
+          about="脉冲响应文件（.wav/.json），与解析式模态做对照",
+        ),
       ]),
       @argparse.Command("sabine", about="用 Sabine 公式估算 RT60", options=[
         @argparse.OptionArg("length", long="length", about="长度 (m)"),

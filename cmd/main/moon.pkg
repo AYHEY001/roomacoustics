@@ -1,5 +1,6 @@
 import {
   "Ridge-Lab/moonwavkit" @mwav,
+  "chgttyyr/MoonSpectrum" @msp,
   "haiou/roomacoustics" @ra,
   "moonbitlang/core/argparse",
   "moonbitlang/core/builtin",
@@ -9,3 +10,9 @@ import {
 }
 
 pkgtype(kind: "executable")
+
+// math 只在白盒测试里用（构造已知频率的正弦做自检），
+// 主包代码不需要，所以按目标声明，避免 unused_package 警告。
+import {
+  "moonbitlang/core/math",
+} for "wbtest"
