@@ -40,22 +40,32 @@ test "Sabine：无效输入返回 None 而不是 inf" {
 }
 
 ///|
-test "模态频率：轴向基频等于 c / L" {
+test "模态频率：轴向基频等于 c / (2L)" {
+  // **这个 1/2 是推导出来的，不是笔误。** 刚壁边界下法向速度为零，
+  // 声压沿各轴为 cos(k·x)，极值条件 k·L = n·π 给出 k = nπ/L；
+  // 代入 k = 2πf/c 得 f = (c/2)·√((nx/Lx)²+…)，轴向一阶就是 c/(2L)。
+  //
+  // 这条测试原来断言的是 c/L（5 m 边给 68.6 Hz），**是错的**。
+  // 更麻烦的是当时还拿 c/L 当"轴向基频"去做物理自检，
+  // 于是自检也跟着错、一路绿灯 —— 错误的期望值把错误保护了起来。
+  // 最后是对着镜像声源法生成的实测频谱才发现的：
+  // 频谱在 34.3 Hz 明明有峰（比值 2.05），预测集里却没有这个频率。
   let c = @roomacoustics.SOUND_SPEED
   let f = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (1, 0, 0)).unwrap()
   assert_true(
-    (f - c / 5.0).abs() < 0.000000001,
-    msg="5.0 m 边的一阶轴向模态应为 c/5",
+    (f - c / 10.0).abs() < 0.000000001,
+    msg="5.0 m 边的轴向基频应为 c/(2L) = c/10 = 34.3 Hz，实际 " +
+      f.to_string(),
   )
   let g = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (0, 1, 0)).unwrap()
   assert_true(
-    (g - c / 4.0).abs() < 0.000000001,
-    msg="4.0 m 边的一阶轴向模态应为 c/4",
+    (g - c / 8.0).abs() < 0.000000001,
+    msg="4.0 m 边应为 c/8 = 42.875 Hz，实际 " + g.to_string(),
   )
   let h = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (0, 0, 1)).unwrap()
   assert_true(
-    (h - c / 2.6).abs() < 0.000000001,
-    msg="2.6 m 边的一阶轴向模态应为 c/2.6",
+    (h - c / 5.2).abs() < 0.000000001,
+    msg="2.6 m 边应为 c/5.2 = 65.96 Hz，实际 " + h.to_string(),
   )
 }
 
@@ -64,9 +74,9 @@ test "模态频率：数值与探针一致" {
   // 这些值来自 _probe/physics_probe.py 的 [4] 节输出
   // 探针打印两位小数（109.81），这里用 Python math 核算的精确值作为断言
   let f = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (1, 0, 0)).unwrap()
-  debug_inspect(f, content="68.60000000000001")
+  debug_inspect(f, content="34.300000000000004")
   let g = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (1, 1, 0)).unwrap()
-  debug_inspect(g, content="109.81358067197336")
+  debug_inspect(g, content="54.90679033598668")
 }
 
 ///|

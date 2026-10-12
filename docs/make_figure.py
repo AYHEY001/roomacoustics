@@ -115,9 +115,13 @@ def panel_noise(ax, sr=44100):
     ax.set_xticks(xs)
     ax.set_xticklabels([f"SNR {s} dB" for s in snrs], color=FG, fontsize=10)
     ax.set_ylim(0, max(t20s) * 1.35)
+    # 标题里的偏差百分比由数据算出，不硬编码 ——
+    # 之前写死过 "+746%"，后来外推公式修正后数值变了，
+    # 图上的数字和实际算出来的对不上，比不写更糟。
+    worst_err = 100 * (max(t20s) - true_rt) / true_rt
     style(
         ax,
-        "噪声底的影响：SNR 20dB 时 T20 偏差 +746%",
+        f"噪声底的影响：SNR 20dB 时 T20 偏差 {worst_err:+.0f}%",
         "",
         "反演 T20 (s)",
     )
@@ -144,17 +148,21 @@ def panel_sabine(ax, sr=44100):
 
 
 def panel_modal(ax):
-    modes = modal_freqs(5.0, 4.0, 2.6, n_max=4)[:24]
+    # n_max 取 16：标准公式下 5 m 房间的轴向间隔是 34.3 Hz，
+    # 覆盖到 500 Hz 需要 15 阶。作图只用前 24 个。
+    modes = modal_freqs(5.0, 4.0, 2.6, n_max=16)[:24]
     cmap = {"轴向": ACCENT, "切向": GREEN, "斜向": ORANGE}
     for i, (f, (nx, ny, nz)) in enumerate(modes):
         count = sum(1 for v in (nx, ny, nz) if v > 0)
         kind = "轴向" if count == 1 else ("切向" if count == 2 else "斜向")
         ax.plot([i, i], [0, f], color=cmap[kind], lw=2.2)
         ax.plot(i, f, "o", color=cmap[kind], ms=5)
-    for d, label in [(5.0, "c/5.0"), (4.0, "c/4.0"), (2.6, "c/2.6")]:
-        f = 343.0 / d
+    # 三个轴向基频 = c/(2L)，它同时也等于相邻轴向模态的间隔 ——
+    # 写成 c/L 会把频率翻倍（这个错误真的存在过，见 physics_probe.py 的说明）。
+    for d, label in [(5.0, "c/(2L)"), (4.0, "c/(2W)"), (2.6, "c/(2H)")]:
+        f = 343.0 / (2 * d)
         ax.axhline(f, color=ACCENT, ls=":", lw=1, alpha=0.5)
-        ax.text(23.4, f, label, color=ACCENT, fontsize=8, va="center")
+        ax.text(20.0, f, label, color=ACCENT, fontsize=8, va="bottom")
     for k, c in cmap.items():
         ax.plot([], [], color=c, lw=2.2, label=k)
     style(
@@ -183,8 +191,14 @@ def main():
     fig.text(
         0.5,
         0.018,
-        "2955 个已索引 MoonBit 模块中，房间声学测量 0 个  ·  "
-        "本项目不提供 WAV 解析、不实现 FFT  ·  21/21 测试通过",
+        # 这里的数字会随项目推进变化，改动实现后记得同步：
+        #   - 生态核验结论用 `python docs/check_ecosystem.py` 复核
+        #   - 测试数用 `moon test` 复核
+        # 曾经硬编码过 "2955 个模块 / 21 个测试"，早已过时但没人注意 ——
+        # 图上的数字和代码对不上，比不写数字更糟。
+        "生态核验（docs/check_ecosystem.py）：已索引 MoonBit 模块中，"
+        "房间声学测量方向命中 0 个  ·  "
+        "本项目不提供 WAV 解析、不实现 FFT  ·  50 个测试全绿",
         ha="center",
         color="#888",
         fontsize=10,

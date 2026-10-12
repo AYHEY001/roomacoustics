@@ -60,19 +60,25 @@ def decay_times(ir, sr):
         return slope, intercept, n
 
     res = {}
-    # EDT：0 -> -10 dB 的拟合直线外推到 -60 dB
+    # 外推到 60 dB。**三个指标的分母都是 60 dB，与截距无关**：
+    #   EDT: 从 0 到 -10 dB 的时间 × 6 = 6×(10/|slope|) = 60/|slope|
+    #   T20: 从 -5 到 -25 dB 的时间 × 3 = 3×(20/|slope|) = 60/|slope|
+    #   T30: 从 -5 到 -35 dB 的时间 × 2 = 2×(30/|slope|) = 60/|slope|
+    #
+    # 曾经写成 (-60 - intercept)/slope —— 那是"拟合直线穿过 -60 dB 的
+    # 时刻"，只在 intercept ≈ 0 时才等于 T20。这个错误在探针、MoonBit
+    # 实现里同时存在过，两边都是同一个假设，所以对账也对不出来；
+    # 是拿 T20 的定义手算才发现的。
     f = fit(0.0, -10.0)
-    res["EDT"] = (-60.0 - f[1]) / f[0] if f else None
+    res["EDT"] = -60.0 / f[0] if f else None
     res["_EDT_fit"] = f
 
-    # T20：-5 -> -25 dB，乘 3 外推到 -60 dB
     f = fit(-5.0, -25.0)
-    res["T20"] = (-60.0 - f[1]) / f[0] if f else None
+    res["T20"] = -60.0 / f[0] if f else None
     res["_T20_fit"] = f
 
-    # T30：-5 -> -35 dB，乘 2 外推到 -60 dB
     f = fit(-5.0, -35.0)
-    res["T30"] = (-60.0 - f[1]) / f[0] if f else None
+    res["T30"] = -60.0 / f[0] if f else None
     res["_T30_fit"] = f
 
     return res
@@ -174,9 +180,21 @@ def test_edc_monotonic():
 # ---------------------------------------------------------------- 4. 模态频率
 
 
-def modal_freqs(L, W, H, n_max=6):
-    """矩形房间模态：f = c * sqrt((nx/L)^2 + (ny/W)^2 + (nz/H)^2)
+def modal_freqs(L, W, H, n_max=16):
+    """矩形房间模态：f = (c/2) * sqrt((nx/L)^2 + (ny/W)^2 + (nz/H)^2)
+
     边界条件为刚壁时 nx,ny,nz >= 0。返回按频率排序的前若干个。
+
+    **那个 1/2 是推导出来的，不是笔误**：刚壁下法向速度为零，
+    声压沿各轴呈 cos(k·x)，极值条件 k·L = n·π 给出 k = nπ/L；
+    代入 k = 2πf/c 两边约掉 π 即得 f = (c/2)·√(…)。
+
+    这里曾经写成 c·√(…)（少了 1/2）。后果是频率整体翻倍、
+    只保留偶数阶模态 —— 5 m 房间的轴向基频从 34.3 Hz 变成 68.6 Hz。
+    而且当时的"手算核对"用的是同样错的 c/L，于是自检也跟着错。
+
+    n_max 取 16：标准公式下最长边 5 m 的轴向间隔是 34.3 Hz，
+    覆盖到 500 Hz 需要 15 阶。
     """
     modes = []
     for nx in range(n_max):
@@ -184,7 +202,9 @@ def modal_freqs(L, W, H, n_max=6):
             for nz in range(n_max):
                 if nx == ny == nz == 0:
                     continue
-                f = C_AIR * np.sqrt((nx / L) ** 2 + (ny / W) ** 2 + (nz / H) ** 2)
+                f = (C_AIR / 2.0) * np.sqrt(
+                    (nx / L) ** 2 + (ny / W) ** 2 + (nz / H) ** 2
+                )
                 modes.append((f, (nx, ny, nz)))
     modes.sort()
     return modes
@@ -204,13 +224,22 @@ def test_modal():
         kind = "轴向" if sum(1 for v in idx if v > 0) == 1 else (
             "切向" if sum(1 for v in idx if v > 0) == 2 else "斜向")
         print(f"  {f:10.2f} {str(idx):>14}   {kind}")
-    # 轴向模态间距应等于 c/L
-    axial = sorted([C_AIR * 1 / d for d in (L, W, H)])
+    # 轴向基频 = c/(2L)。它同时也等于相邻轴向模态的间隔 ——
+    # 这两个数相等，正是最容易把 1/2 丢掉的混淆点。
+    axial = sorted([C_AIR / (2 * d) for d in (L, W, H)])
     print()
-    print(f"  三个轴向基频 c/L, c/W, c/H = {[f'{f:.2f}' for f in axial]}")
-    print(f"  手算核对 c/5.0={C_AIR/5.0:.2f}  c/4.0={C_AIR/4.0:.2f}  c/2.6={C_AIR/2.6:.2f}")
-    # 间隔判据：模态间隔在低频段约为 c/2L
+    print(f"  三个轴向基频 c/(2L), c/(2W), c/(2H) = {[f'{f:.2f}' for f in axial]}")
+    print(f"  手算核对 c/10={C_AIR/10:.2f}（5m）  c/8={C_AIR/8:.2f}（4m）  "
+          f"c/5.2={C_AIR/5.2:.2f}（2.6m）")
     print(f"  最密的轴向间隔 = {min(axial):.2f} Hz，对应最长边 {max(L,W,H)} m")
+
+    # 硬断言：防止 1/2 再次丢失
+    got = modes[0][0]
+    assert abs(got - C_AIR / (2 * L)) < 1e-9, (
+        f"最低模态应为 c/(2L) = {C_AIR/(2*L):.3f} Hz，实际 {got:.3f} Hz —— "
+        f"公式的 1/2 丢了？"
+    )
+    print(f"  自检：最低模态 = {got:.2f} Hz = c/(2L)  ✔")
     print("  经验判据：房间尺度 << 波长时模态密集，这是房间声学的核心特征之一")
     return modes
 

@@ -59,8 +59,8 @@ test "WAV 与 JSON 读同一信号：衰减时间逐位一致" {
   }
   // 与 JSON 路径的结果对照（该值由 decay_wbtest 里的同一份信号确定）
   assert_true(
-    (t20_wav - 0.811).abs() < 0.005,
-    msg="WAV 读入的 T20 应与 JSON 路径一致 (0.811s)，实际 " +
+    (t20_wav - 0.810).abs() < 0.005,
+    msg="WAV 读入的 T20 应与 JSON 路径一致 (0.810s)，实际 " +
       t20_wav.to_string(),
   )
 }

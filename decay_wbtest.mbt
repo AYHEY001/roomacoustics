@@ -388,3 +388,45 @@ test "拟合失败：非法采样率不崩溃" {
     Failed(_, _) => ()
   }
 }
+
+///|
+test "外推定义：T20 = 60/|slope|，与截距无关" {
+  // **这条测试专门钉住 T20 的定义，防的是"看起来等价其实不等价"的写法。**
+  //
+  // 构造一条斜率为 -10 dB/s、截距为 -5 dB 的 EDC 直线：
+  //   db(t) = -10·t - 5
+  // 它在 t = 0 处是 -5 dB，在 t = 2 s 处是 -25 dB。按定义：
+  //   T20 = 3 × (t(-25) − t(-5)) = 3 × 2 = 6 s
+  //
+  // 而曾经实现的写法 (-60 - intercept)/slope 会给出
+  //   (-60 + 5) / (-10) = 5.5 s —— 差了 8%。
+  //
+  // 两种写法只在 intercept ≈ 0 时才相等，所以干净数据上永远看不出区别，
+  // 靠对账也发现不了（探针当时用的是同一个错公式）。
+  // 只有把截距做出来才能区分 —— 这就是这条测试的作用。
+  let sr : Int32 = 1000
+  let n = 4000
+  let edc : Array[Double] = Array(capacity=n)
+  let mut i = 0
+  while i < n {
+    let t = i.to_double() / sr.to_double()
+    edc.push(-10.0 * t - 5.0)
+    i += 1
+  }
+  let res = fit_decay_time(edc, sr, -5.0, -25.0)
+  match res {
+    Success(t, slope, _, _) => {
+      assert_true(
+        (t - 6.0).abs() < 0.01,
+        msg="T20 应为 6.0 s（= 3 × 20/10），实际 " +
+          t.to_string() +
+          "；若是 5.5 s 说明用了 (-60-intercept)/slope",
+      )
+      assert_true(
+        (slope + 10.0).abs() < 0.01,
+        msg="斜率应为 -10 dB/s，实际 " + slope.to_string(),
+      )
+    }
+    Failed(_, _) => assert_true(false, msg="直线数据不该拟合失败")
+  }
+}

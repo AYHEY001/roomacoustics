@@ -113,11 +113,27 @@ fn collect_fit(
   if count < 10 {
     return Failed(InsufficientRangeInFit(from_db - to_db, count), noise_margin)
   }
-  let (slope, intercept) = least_squares_line(times, values)
+  // intercept 不参与时间外推（见下方说明），保留变量名以示拟合确实算出了它
+  let (slope, _intercept) = least_squares_line(times, values)
   if slope >= 0.0 || slope.is_nan() {
     return Failed(NonDecayingSlope(slope), noise_margin)
   }
-  let time = (-60.0 - intercept) / slope
+  // 外推到 60 dB。三个指标的分母都是 60 dB：
+  //   EDT: EDC 从 0 到 -10 dB 的时间 × 6 = 6 × (10/|slope|) = 60/|slope|
+  //   T20: 从 -5 到 -25 dB 的时间 × 3 = 3 × (20/|slope|) = 60/|slope|
+  //   T30: 从 -5 到 -35 dB 的时间 × 2 = 2 × (30/|slope|) = 60/|slope|
+  //
+  // **不能写成 `(-60 - intercept) / slope`。** 那算的是"拟合直线穿过
+  // -60 dB 的时刻"，只在 intercept ≈ 0（拟合区间起点落在 0 dB 附近）时
+  // 才等于 T20。一旦数据有偏移，两者就分道扬镳。
+  //
+  // 这个错误真的存在过，而且是靠外部对账才发现的：
+  // 对 SNR 20 dB 的语料，`(-60-intercept)/slope` 给 6.69 s，
+  // 而按 T20 定义（及 Python 参考实现）是 8.93 s —— 真值 0.8 s，
+  // 两者都错，但错得不一样，说明至少有一个不符合定义。
+  // 干净信号上 intercept ≈ 0，两种算法差别只有 0.001 s，
+  // 所以 50 个测试全绿也没暴露出来。
+  let time = -60.0 / slope
   Success(time, slope, from_db - to_db, count)
 }
 

@@ -67,15 +67,30 @@ def image_source_ir(L, W, H, alpha, sr, duration, order=12, seed=0):
     return ir, src, rec
 
 
-def modal_freqs(L, W, H, n_max=5):
-    """解析式模态频率，与 MoonBit 侧 modal_frequency 同式。"""
+def modal_freqs(L, W, H, n_max=16):
+    """解析式模态频率。
+
+    公式 `f = (c/2)·√((nx/L)² + (ny/W)² + (nz/H)²)` —— **1/2 不能少**。
+
+    推导：刚壁边界下法向速度为零，声压沿各轴为 `cos(k·x)`，
+    极值条件 `k·L = n·π` 给出 `k = nπ/L`；代入 `k = 2πf/c`，
+    两边约掉 π 得 `f = (c/2)·√(…)`。
+
+    这里曾经写错过（少了 1/2），后果是频率整体翻倍、**只保留偶数阶模态**，
+    而且拿错误的 `c/L` 当"轴向基频"去自检，自检也跟着错、一路绿灯。
+    是对着镜像声源法生成的实测频谱才发现的：频谱在 34.3 Hz 有峰，
+    预测集里却没有这个频率。现在 `--check` 会直接验这一点。
+
+    `n_max` 取 16：标准公式下 5 m 房间的轴向间隔是 34.3 Hz，
+    覆盖到 500 Hz 需要 15 阶。
+    """
     out = []
     for nx in range(n_max):
         for ny in range(n_max):
             for nz in range(n_max):
                 if nx == 0 and ny == 0 and nz == 0:
                     continue
-                f = C_AIR * np.sqrt(
+                f = (C_AIR / 2.0) * np.sqrt(
                     (nx / L) ** 2 + (ny / W) ** 2 + (nz / H) ** 2
                 )
                 out.append((f, (nx, ny, nz)))
@@ -162,6 +177,18 @@ def main():
     print("=" * 64)
     peaks = spectrum_peaks(ir, sr)
     predicted = modal_freqs(L, W, H)
+
+    # ---- 硬性自检：轴向基频 ----
+    # 这一项专门钉住那个曾经错掉的 1/2。
+    # 5 m 房间的轴向基频必须是 c/(2L) = 34.3 Hz；
+    # 写成 c/L = 68.6 Hz 就是错的，且会让所有频率翻倍、只留偶数阶。
+    axial = (C_AIR / 2.0) / L
+    got = min(f for f, idx in predicted if idx in ((1, 0, 0), (0, 1, 0), (0, 0, 1)))
+    assert abs(got - axial) < 1e-9, (
+        f"轴向基频应为 c/(2L) = {axial:.3f} Hz，实际算出 {got:.3f} Hz —— "
+        f"公式的 1/2 丢了？"
+    )
+    print(f"  轴向基频自检：c/(2L) = {axial:.3f} Hz  ✔")
     n_fft = largest_pow2_at_most(len(ir))
     print(
         f"  FFT 长度 {n_fft}（2 的幂；原信号 {len(ir)} 点被截断），"
@@ -200,9 +227,15 @@ def main():
             f"{100.0 * matched / len(peaks):.0f}%"
         )
     print()
-    print("  说明：配对率不是 100% 是正常的 —— 单点测量的传递函数里，")
-    print("  部分预测模态在声源或接收点位置不被激励（落在节面上）。")
-    print("  这个判定的方向是「检测到的峰能否对应到预测模态」，")
+    if matched == len(peaks):
+        print("  说明：本次 23 个峰全部匹配上预测模态。")
+        print("  但这不代表所有预测模态都被激励 —— 5×4×2.6 m 房间在 500 Hz")
+        print("  以下有数百个模态（Weyl 公式），频谱里只有 23 个形成峰。")
+        print("  其余落在节面上未被激励，这是单点声源/单点接收的固有局限。")
+    else:
+        print("  说明：未配对的峰通常是节面效应 —— 单点测量的传递函数里，")
+        print("  声源或接收点若落在某模态的节面上，该模态不被激励。")
+    print("  判定方向是「检测到的峰能否对应到预测模态」，")
     print("  而不是「预测模态是否全部被检测到」—— 后者物理上做不到。")
 
     # ---- 写出语料 ----
@@ -219,6 +252,24 @@ def main():
     print()
     print(f"  已写出 {wav_path}  ({os.path.getsize(wav_path)/1024:.0f} KB)")
 
+    # 存配对结果而不是全部预测模态：520 Hz 以下有 700 多个模态，
+    # 全存进 json 既臃肿又没用；真正有信息量的是"每个峰对应哪个模态"。
+    matched_list = []
+    for f, r in peaks:
+        near_f, near_idx = min(predicted, key=lambda pf: abs(pf[0] - f))
+        dev = f - near_f
+        tol = max(5.0, near_f * 0.05)
+        matched_list.append(
+            {
+                "peak_hz": round(f, 3),
+                "prominence": round(r, 3),
+                "mode_hz": round(near_f, 3),
+                "mode": list(near_idx),
+                "deviation_hz": round(dev, 3),
+                "matched": bool(abs(dev) <= tol),
+            }
+        )
+
     meta = {
         "room": {"length": L, "width": W, "height": H},
         "alpha": alpha,
@@ -228,12 +279,9 @@ def main():
         "source_pos": [float(v) for v in src],
         "receiver_pos": [float(v) for v in rec],
         "fft_length": n_fft,
+        "axial_fundamental_hz": round(axial, 3),
         "peaks_hz": [round(f, 3) for f, _ in peaks],
-        "predicted_modes_hz": [
-            {"freq": round(f, 3), "mode": list(idx)}
-            for f, idx in predicted
-            if f <= 700
-        ],
+        "matches": matched_list,
     }
     meta_path = os.path.join(OUT, "room_5x4x2.6_modes.json")
     with open(meta_path, "w", encoding="utf-8") as f:

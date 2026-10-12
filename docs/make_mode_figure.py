@@ -60,7 +60,11 @@ def main():
     L, W, H = room["length"], room["width"], room["height"]
     sr = meta["sample_rate"]
     peaks_hz = meta["peaks_hz"]
-    pred = [m["freq"] for m in meta["predicted_modes_hz"]]
+    matches = meta["matches"]
+    # 只画匹配到的模态位置。520 Hz 以下有 700 多个预测模态，
+    # 全画成竖线会糊成一片；峰的对应模态只有 23 个，图上更清楚。
+    pred = [m["mode_hz"] for m in matches]
+    print(f"轴向基频（应为 c/(2L)）：{meta['axial_fundamental_hz']} Hz")
 
     # 重算频谱用于绘图（与生成语料时同一份 IR）
     ir, _, _ = image_source_ir(L, W, H, meta["alpha"], sr, 2.0)
@@ -90,7 +94,7 @@ def main():
     for i, f in enumerate(pred):
         ax1.axvline(
             f, color=ACCENT, ls="--", lw=1.1, alpha=0.75,
-            label="解析式预测模态" if i == 0 else None,
+            label="预测模态（峰对应的）" if i == 0 else None,
         )
     # 检测到的峰：红点
     for i, f in enumerate(peaks_hz):
@@ -116,26 +120,22 @@ def main():
 
     # ---- 下：偏差 ----
     ax2 = fig.add_subplot(2, 1, 2)
-    # 每个峰 -> 最近预测模态
-    devs = []
-    for i, f in enumerate(peaks_hz):
-        near = min(pred, key=lambda p: abs(p - f))
-        devs.append((f, f - near, near))
-    xs = [d[0] for d in devs]
-    ys = [d[1] for d in devs]
-    colors = [
-        GREEN if abs(d[1]) <= max(5.0, d[2] * 0.05) else RED for d in devs
-    ]
+    # 直接用 json 里已算好的配对结果，不在这里重算 ——
+    # 保证图上数字与 CLI 输出、与测试断言出自同一份数据
+    xs = [m["peak_hz"] for m in matches]
+    ys = [m["deviation_hz"] for m in matches]
+    tol_vals = [max(5.0, m["mode_hz"] * 0.05) for m in matches]
+    colors = [GREEN if m["matched"] else RED for m in matches]
     ax2.bar(xs, ys, width=4.5, color=colors)
     ax2.axhline(0, color=FG, lw=1.0, alpha=0.5)
-    # 容差带
-    tol_lo = [-max(5.0, d[2] * 0.05) for d in devs]
-    tol_hi = [max(5.0, d[2] * 0.05) for d in devs]
-    ax2.fill_between(xs, tol_lo, tol_hi, color=GREEN, alpha=0.12, label="容差 max(5Hz, 5%)")
+    ax2.fill_between(
+        xs, [-t for t in tol_vals], tol_vals,
+        color=GREEN, alpha=0.12, label="容差 max(5Hz, 5%)",
+    )
     matched = sum(1 for c in colors if c == GREEN)
     style(
         ax2,
-        f"检测峰相对最近预测模态的偏差　—　配对 {matched}/{len(devs)} = {100*matched/len(devs):.0f}%",
+        f"检测峰相对最近预测模态的偏差　—　配对 {matched}/{len(matches)} = {100*matched/len(matches):.0f}%",
         "频率 (Hz)",
         "偏差 (Hz)",
     )
@@ -146,8 +146,9 @@ def main():
     fig.text(
         0.5,
         0.015,
-        "两个未配对的峰（55 / 103 Hz）在物理上是正常的：单点测量里，"
-        "若声源或接收点落在某模态的节面上，该模态不被激励",
+        f"轴向基频 c/(2L) = {meta['axial_fundamental_hz']:.1f} Hz　·　"
+        f"{matched}/{len(matches)} 个检测峰匹配到预测模态　·　"
+        f"预测模态候选集取 f ≤ 520 Hz",
         ha="center",
         color="#888",
         fontsize=9.5,
@@ -158,7 +159,7 @@ def main():
     os.makedirs(os.path.dirname(out), exist_ok=True)
     plt.savefig(out, dpi=150, facecolor=BG)
     print(f"已保存 {out}")
-    print(f"配对 {matched}/{len(devs)}")
+    print(f"配对 {matched}/{len(matches)} = {100*matched/len(matches):.0f}%")
 
 
 if __name__ == "__main__":

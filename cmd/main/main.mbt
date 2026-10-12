@@ -404,8 +404,22 @@ fn compare_modes_with_ir(
     )
     return
   }
-  // 取足够多的高阶模态参与配对
-  let modes = @ra.list_modes(l, w, h, 120)
+  // 取**全部**范围内的模态再按频率截断，不能用"前 N 个"。
+  //
+  // 模态密度随频率平方增长（Weyl 公式：5×4×2.6 m 房间在 500 Hz 以下
+  // 有几百个模态）。取前 120 个只覆盖到约 280 Hz，
+  // 于是 300~500 Hz 的每一个峰都会因"附近没有预测模态"而误判为未配对。
+  //
+  // 截断到 520 Hz 是给容差留余量：f_max = 500 Hz 处的容差是 25 Hz。
+  let all_modes = @ra.list_modes(l, w, h, 4000)
+  let modes : Array[@ra.Mode] = Array(capacity=1024)
+  let mut mi = 0
+  while mi < all_modes.length() {
+    if all_modes[mi].freq <= 520.0 {
+      modes.push(all_modes[mi])
+    }
+    mi += 1
+  }
   let matches = match_peaks_to_modes(peaks, modes)
   println("对照（峰 -> 最近的预测模态，容差 max(5Hz, 5%)）")
   println("峰 (Hz)   突出度   预测模态 (Hz)  阶次        偏差 (Hz)")

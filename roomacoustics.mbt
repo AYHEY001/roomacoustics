@@ -21,8 +21,20 @@ pub fn sabine(volume : Double, surface : Double, alpha : Double) -> Double? {
 ///|
 /// 矩形房间中 (nx, ny, nz) 阶模态的频率，单位 Hz。
 ///
-/// 公式：`f = c · √((nx/Lx)² + (ny/Ly)² + (nz/Lz)²)`，
+/// 公式：`f = (c/2) · √((nx/Lx)² + (ny/Ly)² + (nz/Lz)²)`，
 /// 声速 `c` 取 343 m/s（20 °C 干空气）。
+///
+/// **那个 1/2 是推导出来的，不是笔误**：刚壁边界下法向速度为零，
+/// 声压沿各轴呈 `cos(k·x)` 分布，极值条件 `k·L = n·π` 给出 `k = nπ/L`。
+/// 代入波数关系 `k = 2πf/c` 得 `2πf/c = π·√((nx/Lx)²+…)`，
+/// 两边约掉 π 即得 `f = (c/2)·√(…)`。
+///
+/// 少了这个 1/2 会让所有频率翻倍，且**只保留偶数阶** ——
+/// 轴向基频会从 34.3 Hz 变成 68.6 Hz（对 5 m 房间）。
+/// 这个错误曾经真的存在过：当时用 `c/L` 当"轴向基频"去自检，
+/// 而 `c/L` 本身就是错的，于是自检也跟着错，一路绿灯。
+/// 是对着镜像声源法生成的实测频谱才发现的 —— 频谱在 34.3 Hz 明明有峰，
+/// 预测集里却没有这个频率。现在测试里直接钉住了 34.3 Hz。
 ///
 /// 边界条件为刚壁，`(0, 0, 0)` 是零频的空气共振（不计入房间模态），返回 `None`。
 /// 任一边长非正时同样返回 `None`。
@@ -45,7 +57,7 @@ pub fn modal_frequency(
   let fx = nx.to_double() / length
   let fy = ny.to_double() / width
   let fz = nz.to_double() / height
-  Some(SOUND_SPEED * (fx * fx + fy * fy + fz * fz).sqrt())
+  Some(SOUND_SPEED / 2.0 * (fx * fx + fy * fy + fz * fz).sqrt())
 }
 
 ///|
@@ -79,8 +91,16 @@ pub fn list_modes(
   if length <= 0.0 || width <= 0.0 || height <= 0.0 || limit <= 0 {
     return []
   }
-  // 阶数上限取一个够用的小值：低阶模态才是实际关心的
-  let order = 4
+  // 阶数上限。
+  //
+  // 取 15 是因为房间声学关心的频段（大致 20~500 Hz）在各方向需要这个阶数：
+  // 最长边 5 m 的轴向模态间隔是 c/(2L) = 34.3 Hz，覆盖到 500 Hz 需要 15 阶；
+  // 短边 2.6 m 间隔 66 Hz，只需 8 阶。取各方向的最大值。
+  //
+  // 之前这里写 4 —— 那时模态公式少了 1/2，频率整体翻倍，
+  // 于是"4 阶"看起来就覆盖了同样的范围。公式修正后必须同步调大，
+  // 否则高阶模态会成片缺失，模态对照的配对率会莫名下降。
+  let order = 15
   let found = Array(capacity=64)
   let mut nx = 0
   while nx <= order {

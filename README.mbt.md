@@ -35,18 +35,21 @@ test "Sabine：非法输入返回 None" {
 
 ## 矩形房间模态频率
 
-`f = c · √((nx/Lx)² + (ny/Ly)² + (nz/Lz)²)`，其中 c = 343 m/s。
+`f = (c/2) · √((nx/Lx)² + (ny/Ly)² + (nz/Lz)²)`，其中 c = 343 m/s。
 
-轴向模态的基频就是 `c / L`，例如 5.0 m 边的第一个轴向模态：
+那个 **1/2** 来自边界条件：刚壁下法向速度为零，声压沿各轴呈 `cos(k·x)`，
+极值条件 `k·L = n·π` 给出 `k = nπ/L`；代入 `k = 2πf/c` 约掉 π 即得。
+
+轴向模态的基频是 `c / (2L)`，例如 5.0 m 边的第一个轴向模态：
 
 ```mbt check
 ///|
-test "轴向模态基频 = c / L" {
+test "轴向模态基频 = c / (2L)" {
   let f = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (1, 0, 0))
-  debug_inspect(f, content="Some(68.60000000000001)")
+  debug_inspect(f, content="Some(34.300000000000004)")
   // 4.0 m 边的第一个轴向模态
   let g = @roomacoustics.modal_frequency(5.0, 4.0, 2.6, (0, 1, 0))
-  debug_inspect(g, content="Some(85.75)")
+  debug_inspect(g, content="Some(42.875)")
 }
 ```
 

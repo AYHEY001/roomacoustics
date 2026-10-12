@@ -79,12 +79,18 @@ test "模态对照：镜像声源 IR 的配对率达到 Python 参考水平" {
   // **这是本功能最核心的一条测试。**
   //
   // Python 参考实现（同一份语料、同一套算法、numpy FFT）给出
-  // 21/23 = 91%。MoonBit 侧用自己的 FFT（MoonSpectrum）实现，
-  // 必须达到同一水平。
+  // 23/23 = 100%，全部 23 个峰都能对应到预测模态。
+  // MoonBit 侧用自己的 FFT（MoonSpectrum）实现，必须达到同一水平。
   //
-  // 断言留出余量：配对率 >= 86%（允许 1 个峰的浮动），
-  // 峰数在 21~25 之间。不写死 23 是因为两个 FFT 实现存在极微小的
-  // 浮点差异，阈值附近的弱峰可能翻转 —— 强行卡死会让测试变得脆弱。
+  // 断言留出余量：配对率 >= 90%（允许 2 个峰的浮动），
+  // 峰数在 21~25 之间。不写死 23/23 是因为两个 FFT 实现存在极微小的
+  // 浮点差异，贴近阈值的弱峰可能翻转 —— 强行卡死会让测试变得脆弱。
+  //
+  // 这个数字曾经是 91%（21/23），当时有两个峰被判"未配对"。
+  // 排查后发现**问题不在检测算法，而在预测端**：
+  // modal_frequency 的公式少了 1/2，导致频率整体翻倍、
+  // 只保留偶数阶模态，(1,1,0) 和 (3,0,0) 这类模态根本没进候选集。
+  // 修正公式后升到 100%。
   let loaded = load_wav_ir("testdata/room_5x4x2.6_image_source.wav")
   let data = match loaded {
     Ok(d) => d
@@ -98,7 +104,19 @@ test "模态对照：镜像声源 IR 的配对率达到 Python 参考水平" {
     peaks.length() >= 21 && peaks.length() <= 25,
     msg="峰数应在 21~25 之间，实际 " + peaks.length().to_string(),
   )
-  let modes = @ra.list_modes(5.0, 4.0, 2.6, 120)
+  // 取全部范围内的模态再按频率截断 —— 不能用"前 N 个"。
+  // 模态密度随频率平方增长（Weyl），5×4×2.6 m 房间在 500 Hz 以下
+  // 有几百个模态；取前 120 个只覆盖到约 280 Hz，
+  // 300~500 Hz 的峰会因"附近没有预测模态"而成片误判。
+  let all_modes = @ra.list_modes(5.0, 4.0, 2.6, 4000)
+  let modes : Array[@ra.Mode] = Array(capacity=1024)
+  let mut mi = 0
+  while mi < all_modes.length() {
+    if all_modes[mi].freq <= 520.0 {
+      modes.push(all_modes[mi])
+    }
+    mi += 1
+  }
   let matches = match_peaks_to_modes(peaks, modes)
   let mut matched = 0
   let mut i = 0
@@ -110,8 +128,8 @@ test "模态对照：镜像声源 IR 的配对率达到 Python 参考水平" {
   }
   let rate = matched.to_double() / matches.length().to_double()
   assert_true(
-    rate >= 0.86,
-    msg="配对率应 >= 86%（Python 参考 91%），实际 " +
+    rate >= 0.90,
+    msg="配对率应 >= 90%（Python 参考 100%），实际 " +
       matched.to_string() +
       "/" +
       matches.length().to_string(),
