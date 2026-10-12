@@ -243,23 +243,30 @@ fn cmd_decay(matches : @argparse.Matches) -> Unit {
     Some(a) if a.length() > 0 => Some(a[0])
     _ => None
   }
-  let loaded = match (file, inline) {
-    (Some(path), _) => {
-      let text = @fs.read_file_to_string(path, encoding="utf8") catch {
-        _ => {
-          println("错误: 无法读取文件 " + path)
-          return
+  // 显式标注结果类型：catch 块里的 return 需要它能确定 Err 的类型参数
+  let loaded : Result[IrData, String] = match (file, inline) {
+    // 按扩展名分派：.wav 走 moonwavkit，其余当 JSON 处理。
+    // 之所以要分派而不是各开一个子命令：用户手里有什么文件就用什么，
+    // 不该为了格式去记两个命令名。
+    (Some(path), _) =>
+      if is_wav_path(path) {
+        load_wav_ir(path)
+      } else {
+        let raw : Result[String, String] = Ok(
+          @fs.read_file_to_string(path, encoding="utf8"),
+        ) catch {
+          @fs.IOError(msg) => Err("读不了 " + path + "：" + msg)
+        }
+        match raw {
+          Ok(text) => parse_ir_json(text)
+          Err(msg) => Err(msg)
         }
       }
-      parse_ir_json(text)
-    }
     (None, Some(s)) => parse_ir_json(s)
-    (None, None) => {
-      println(
-        "错误: 请用 --file <path.json> 或 --ir <json> 提供脉冲响应",
+    (None, None) =>
+      Err(
+        "请用 --file <path.wav|path.json> 或 --ir <json> 提供脉冲响应",
       )
-      return
-    }
   }
   let data = match loaded {
     Ok(d) => d
@@ -283,7 +290,10 @@ fn cmd_decay(matches : @argparse.Matches) -> Unit {
   match report.noise_floor_db {
     Some(nf) => println("噪声底    " + fmt(nf, 1) + " dB")
     None =>
-      println("噪声底    未能估计（样本太少或信号全零）")
+      // 估不出来通常是好事，不是错误：信号尾部已衰减到量化精度以下
+      // （干净的合成脉冲响应经 16-bit 量化后，尾部就是一片 0）。
+      // 真实录音极少出现这种情况 —— 总有环境噪声。
+      println("噪声底    低于仪器分辨率（尾部已衰减到 0）")
   }
   println("")
   println("参数      值        备注")

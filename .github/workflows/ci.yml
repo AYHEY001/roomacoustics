@@ -42,3 +42,5 @@ jobs:
           moon run cmd/main -- sabine --length 5 --width 4 --height 2.6 --alpha 0.2
           moon run cmd/main -- modes --count 5
           moon run cmd/main -- decay -f testdata/clean_0.8.json
+          moon run cmd/main -- decay -f testdata/ir_mono_0.8.wav
+          moon run cmd/main -- decay -f testdata/ir_stereo_0.8.wav

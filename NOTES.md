@@ -238,3 +238,85 @@ CI 全部 11 步 success。
   且 `Number` 有两个字段，必须写 `Number(n, ..)`。
 - `@lib` 是**包别名**不是"这是库"的标记，要显式命名：
   `"haiou/roomacoustics" @ra` → 源码里用 `@ra.foo()`。
+
+---
+
+## 2026-10-12 · 接入 moonwavkit
+
+### moonwavkit 的实际坐标与 API
+
+**不是 `moonbitlang/moonwavkit`，是 `Ridge-Lab/moonwavkit@0.1.3`。**
+仓库 https://github.com/Ridge-Lab/MoonWavKit.git。
+
+常用 API（读 `pkg.generated.mbti` 得到，不是猜的）：
+
+```moonbit
+parse_and_decode(Array[Int], options? : DecodeOptions) -> DecodeResult
+downmix_to_mono(FloatBuffer) -> FloatBuffer
+
+pub(all) struct FloatBuffer {
+  channels : Int
+  sample_rate : Int
+  samples : Array[Double]
+}
+pub(all) struct DecodeResult {
+  ok : Bool
+  pcm : PcmBuffer
+  float_buffer : FloatBuffer
+  error : WavError
+}
+```
+
+输入是 `Array[Int]`（每个元素一个字节），不是文件路径 —— 所以还得自己
+用 `@fs.read_file_to_bytes` 读字节再转。
+
+### 坑 17：`FloatBuffer::samples` 是**交错**的，不是每声道一个数组
+
+立体声文件读进来：`channels=2`，`samples.length()=220500`。
+**220500 = 110250 帧 × 2 声道**，也就是 `[L0,R0,L1,R1,...]` 交错排布。
+
+不注意这一点就会踩坑：把一个 220500 长的交错数组当成 44100Hz 单声道信号，
+时间轴凭空拉长一倍，衰减率减半，算出的 T20 会**正好翻倍**。
+而且没有任何报错——数字看着很合理。
+
+所以立体声必须先 `downmix_to_mono`。实测下混后 `samples.length()=110250`，
+与单声道文件一致。
+
+### 坑 18：注入了错误实现，但没确认注入是否生效 —— 白测一轮
+
+验证"立体声测试是否真的有效"时，我用字符串替换把 `downmix_to_mono` 那段删掉，
+跑测试 —— **44 个全绿**。第一反应是"测试是假的"。
+
+实际原因是：**替换根本没匹配上**（代码经过 `moon fmt` 格式化，
+缩进和我写的不一致），`print("已移除下混逻辑")` 照样执行了，
+看起来像成功。
+
+改成正则替换后再跑，测试立刻变红（`-110250 +220500`），
+而且只有那一条红。
+
+**教训**：注入错误之后要**确认注入生效**（`grep -c` 数一下目标字符串还在不在），
+否则"测试没红"这个观察毫无意义 —— 它既可能是"测试没用"，
+也可能是"改动没生效"。这两种情况的处理方式完全不同。
+
+这条是对 skill 里"改了断言就把实现换回旧的验一遍"的补充：
+换回去之后，还得回头看**换成功了没有**。
+
+### 坏输入的实际表现（实测）
+
+| 输入 | 输出 |
+|---|---|
+| 文本改后缀成 `.wav` | `WAV 解析失败：not-riff（expected RIFF signature）` |
+| 截断的 WAV（前 100 字节） | `WAV 解析失败：chunk-out-of-bounds（chunk extends beyond...）` |
+| 空文件 | `文件为空：<路径>` |
+| 不存在的文件 | `读不了 <路径>：Failed to read file ... (os error 2)` |
+
+`WavError` 有 `message` 字段，把它拼进错误信息比只报错误码有用得多。
+
+### 量化噪声的一个观察
+
+干净的合成 IR 经 16-bit PCM 量化后，尾部衰减到 10⁻⁹ 量级 → 取整后就是 0。
+于是 `estimate_noise_floor` 返回 `None`，CLI 显示"噪声底低于仪器分辨率"。
+
+**这是正常行为，不是 bug**：尾部确实没有可测噪声。
+真实录音不会这样（总有环境噪声），所以噪声污染校验在真实场景下仍会生效。
+一开始我把提示语写成"样本太少或信号全零"，容易让人误以为出错了，已改。

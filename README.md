@@ -25,12 +25,12 @@
 这一节放在最前面，因为把边界说清楚比把功能说漂亮更重要。
 
 **本项目不提供 WAV 解析能力，也不实现 FFT。**
-脉冲响应的文件读取与频谱计算分别交给生态里的成熟方案：
+这两件事交给生态里的成熟方案，本项目**依赖**它们而不是重造：
 
-| 环节 | 依赖 | 说明 |
+| 环节 | 依赖 | 实际用的 API |
 |---|---|---|
-| WAV 读取与解码 | `moonwavkit` | 读取 RIFF/WAVE，输出 PCM 采样点 |
-| 频谱分析（模态检测） | `MoonSpectrum` | FFT / 功率谱 |
+| WAV 读取与解码 | `Ridge-Lab/moonwavkit@0.1.3` | `parse_and_decode`、`downmix_to_mono` |
+| 频谱分析（模态检测） | `MoonSpectrum` | FFT / 功率谱（尚未接入） |
 
 本项目自己的部分是**在这些原始采样之上做的声学计算**：
 能量衰减曲线反演（Schroeder 积分）、衰减时间拟合（EDT / T20 / T30）、
@@ -38,6 +38,15 @@
 
 换句话说，本项目回答的问题是"**给定一个房间的声学响应，它意味着什么**"，
 而不是"如何把一个字节流变成采样点"。前者是房间声学，后者是音频 I/O。
+
+### 依赖放在哪一层
+
+核心库 `haiou/roomacoustics` **不依赖任何音频 I/O** ——
+它只接受 `Array[Double]` 采样点和采样率，因此可以被任何数据源复用
+（WAV、麦克风实时流、其他格式）。
+
+WAV 读取放在 CLI 层（`cmd/main/wav_input.mbt`）。
+这个分层是有意的：库的边界是"数值计算"，I/O 的边界在应用层。
 
 ## 房间声学 vs 声纹识别：为什么不是同一件事
 
@@ -69,9 +78,15 @@ moon run cmd/main -- sabine --length 5 --width 4 --height 2.6 --alpha 0.2
 # 矩形房间模态频率
 moon run cmd/main -- modes --length 5 --width 4 --height 2.6 --count 6
 
-# 从脉冲响应算衰减时间（JSON: {"sample_rate":44100,"ir":[...]}）
+# 从脉冲响应算衰减时间 —— 直接读 WAV（走 moonwavkit）
+moon run cmd/main -- decay -f testdata/ir_mono_0.8.wav
+
+# 也可以读 JSON 采样点（{"sample_rate":44100,"ir":[...]}）
 moon run cmd/main -- decay -f testdata/clean_0.8.json
 ```
+
+`decay` 按扩展名分派：`.wav` / `.wave` 走 moonwavkit 解析，
+其余当 JSON 处理。立体声会自动下混为单声道。
 
 ### 实际输出
 
@@ -118,9 +133,10 @@ T30  不可用：评价区间落进噪声底 (余量 -4.9 dB)，结果不可信 
 - [x] 噪声底估计与评价区间有效性校验
 - [x] Sabine 解析估算、模态频率闭式解
 - [x] CLI 三个子命令（decay / modes / sabine）
-- [x] 回归测试（38 个，含测试有效性验证）
+- [x] 接入 `Ridge-Lab/moonwavkit`，直接读 WAV（含立体声下混）
+- [x] 回归测试（44 个，含测试有效性验证）
 - [x] CI（check / fmt / test + CLI 冒烟）
-- [ ] 接入 moonwavkit，让工具直接读 WAV
+- [ ] 接入 `MoonSpectrum` 做模态频率的实测交叉验证
 - [ ] 文章与 AI Works 上线
 
 ## 物理验证

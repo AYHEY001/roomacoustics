@@ -1,4 +1,5 @@
 import {
+  "Ridge-Lab/moonwavkit" @mwav,
   "haiou/roomacoustics" @ra,
   "moonbitlang/core/argparse",
   "moonbitlang/core/builtin",
