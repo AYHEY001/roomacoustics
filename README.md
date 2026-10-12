@@ -1,0 +1,102 @@
+# roomacoustics
+
+用 MoonBit 从一段脉冲响应（impulse response）计算房间的**混响时间**、**衰减曲线**和**模态频率**。
+
+- 参赛：2026 MoonBit 黑客松（十月赛，10 月 31 日截止）
+- 语言：MoonBit（`preferred_target = "wasm"`）
+- 许可证：Apache-2.0
+
+---
+
+## 边界（先说清楚这个项目**不**做什么）
+
+这一节放在最前面，因为把边界说清楚比把功能说漂亮更重要。
+
+**本项目不提供 WAV 解析能力，也不实现 FFT。**
+脉冲响应的文件读取与频谱计算分别交给生态里的成熟方案：
+
+| 环节 | 依赖 | 说明 |
+|---|---|---|
+| WAV 读取与解码 | `moonwavkit` | 读取 RIFF/WAVE，输出 PCM 采样点 |
+| 频谱分析（模态检测） | `MoonSpectrum` | FFT / 功率谱 |
+
+本项目自己的部分是**在这些原始采样之上做的声学计算**：
+能量衰减曲线反演（Schroeder 积分）、衰减时间拟合（EDT / T20 / T30）、
+解析式混响时间估算（Sabine）、矩形房间模态频率闭式解。
+
+换句话说，本项目回答的问题是"**给定一个房间的声学响应，它意味着什么**"，
+而不是"如何把一个字节流变成采样点"。前者是房间声学，后者是音频 I/O。
+
+## 房间声学 vs 声纹识别：为什么不是同一件事
+
+生态里已有的 `moonecho` 做的是声纹识别（Shazam 式：星座图指纹 + 倒排索引 + 片段对齐）。
+两者经常被混为一谈，但学科对象完全不同：
+
+| | 声纹识别 | 房间声学测量（本项目） |
+|---|---|---|
+| 回答的问题 | 这是什么声音 | 这房间是什么声学特性 |
+| 输入 | 任意录音片段 | **房间的脉冲响应**（特定测量信号） |
+| 输出 | 歌曲/媒体的身份匹配 | RT60 / EDT / T20 / T30、模态频率与衰减 |
+| 时间尺度 | 音频内容本身（数秒） | **指数衰减包络**（整个余响过程） |
+| 方法 | 指纹哈希 + 最近邻检索 | 能量累积积分 + 直线拟合 + 波动方程解析解 |
+| 生态位 | Shazam 类 | ISO 3382 类（声学测量标准） |
+
+一句话：**声纹识别看内容，房间声学听空间。**
+
+## 快速开始
+
+```bash
+moon run cmd/main -- --help
+```
+
+## 项目状态
+
+- [x] 物理验证（三块算法的解析正确性已用探针确认）
+- [ ] MoonBit 实现
+- [ ] 真实 IR 语料回归测试
+- [ ] 文章与演示
+
+## 物理验证
+
+见 [`_probe/physics_probe.py`](_probe/physics_probe.py)。在写实现之前先用它确认
+公式层面成立，结论：
+
+- **Sabine**：与教科书算例手算一致（5.0×4.0×2.6 m，α=0.20 → RT60 = 0.4823 s）
+- **Schroeder 反演**：对已知 T60（0.4 / 0.8 / 1.6 s）的合成脉冲响应，
+  T20 反演误差 < 3%；EDC 逐点与 `sum(ir[i:]^2)` 手算一致，100% 单调不增
+- **模态频率**：`f = c·√((nx/Lx)²+(ny/Ly)²+(nz/Lz)²)` 与轴向基频 `c/L` 手算一致
+- **噪声敏感性**：SNR 20 dB 时 T20 偏差达 +746% —— 噪声底会抬高 EDC 尾部。
+  这是 ISO 3382 要求"评价区间至少低于噪声底 20 dB"的原因，
+  因此本项目**必须报告噪声底**，否则用户无法判断 T20/T30 是否可信。
+
+复现命令：
+
+```bash
+PYTHONIOENCODING=utf-8 python _probe/physics_probe.py
+```
+
+探针跑过之后发现的坑，记录在 [`NOTES.md`](NOTES.md)。
+
+## 参考来源
+
+本项目为原创实现。算法依据为公开的房间声学标准与教科书公式：
+
+- ISO 3382-1:2009《Acoustics — Measurement of room impulse response parameters —
+  Part 1: Basic room acoustics》（衰减时间与评价区间定义）
+- Schroeder, V. R. (1965), "New Method of Measuring the Reverberation Time",
+  *Acustica* 18 — Schroeder 积分法
+- Sabine, W. C. (1899), "The Sabine Equation and Some Recent Developments in
+  Sound Transmission and Reverberation" — Sabine 公式
+- 矩形房间模态的波动方程解析解
+
+主办方推荐的同类参考对象（均为 Python / C++ 生态，**未移植、未引用其代码**）：
+
+| 项目 | 语言 | 用途 |
+|---|---|---|
+| `jmrplens/phonometry` | Python | 声学测量标准库 |
+| `VilhoValittu/DecayCore` | C++ | 衰减曲线处理 |
+| `PyRAT` | Python | 房间声学分析工具包 |
+| `OpenSmaartLab` | Python | 实时声学测量 |
+
+上表仅作领域参考，用于确认功能定位与算法口径的一致性；本项目未使用其任何代码，
+不构成移植关系。
