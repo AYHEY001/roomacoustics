@@ -62,15 +62,25 @@ jobs:
             diff -q "$f" "/tmp/orig/$f" >/dev/null 2>&1 && continue
             changed=$((changed+1))
             echo "::warning title=格式差异::$f"
-            # 判断这个文件的差异是否**仅仅**来自 Int -> Int32 规范化：
-            # 把两侧的 Int32 都还原成 Int，若完全相同，则差异无害。
-            # 注意不能只看单行 —— `-fn f(x : Int)` 这种行里根本没有 Int32，
-            # 逐行过滤会把它误判成"其他差异"（踩过一次）。
-            if ! diff "/tmp/orig/$f" "$f" \
-                 | grep -E '^[<>]' \
-                 | sed 's/Int32/Int/g' \
-                 | sed 's/^[<>] //' \
-                 | sort | uniq -c | awk '$1 % 2 == 1' | grep -q .; then
+            # 判断这个文件的差异是否**仅仅**来自 Int -> Int32 规范化。
+            #
+            # 做法：把两侧的 Int32 还原成 Int，再逐行配对。
+            # 两个坑都踩过：
+            # 1. 不能只看单侧 —— `-fn f(x : Int)` 这行的左半边根本没有 Int32，
+            #    逐行过滤会把它误判成"其他差异"。
+            # 2. 还原 Int32 时不能碰注释 —— 注释里可能本来就提到 Int32
+            #    （本项目就有一段解释工具链差异的说明写着 Int32），
+            #    还原后会与另一侧对不上。
+            #
+            # 所以注释行单独比对（不还原），代码行才做还原后比对。
+            diff_out=$(diff "/tmp/orig/$f" "$f" | grep -E '^[<>]' || true)
+            code_diff=$(echo "$diff_out" | grep -vE '^[<>] *(///|//)' \
+                       | sed 's/Int32/Int/g' | sed 's/^[<>] //' \
+                       | sort | uniq -c | awk '$1 % 2 == 1')
+            comment_diff=$(echo "$diff_out" | grep -E '^[<>] *(///|//)' \
+                       | sed 's/^[<>] //' \
+                       | sort | uniq -c | awk '$1 % 2 == 1')
+            if [ -z "$code_diff" ] && [ -z "$comment_diff" ]; then
               echo "  -> 仅 Int32 规范化，无害"
             else
               echo "  -> 存在其他格式差异："
