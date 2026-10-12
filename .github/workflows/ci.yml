@@ -35,60 +35,44 @@ jobs:
       - run: moon check --deny-warn
       - run: moon test --deny-warn
 
-      # fmt 检查跳过 Int32 规范化差异。
+      # fmt 检查容许 Int32 规范化差异。
       #
-      # 为什么跳过而不是修：MoonBit 的格式化器在不同版本间行为不同。
-      #   本机开发用moon 0.1.20260920 —— `Int` 保持原样
-      #   CI 装的是最新版        —— 会把 `Int` 规范化成 `Int32`
-      # 两个版本互斥：旧版不认 `Int32` 这个类型名，新版又要求写成它。
-      # 历史版本二进制已从发布服务器清理（实测 HTTP 403），
-      # 所以锁版本这条路也走不通。
+      # 背景：MoonBit 格式化器在不同版本间行为不同
+      #   本机 moon 0.1.20260920 —— `Int` 保持原样
+      #   CI装的是最新版        —— 规范化成 `Int32`
+      # 两个版本互斥（旧版不认 `Int32` 类型名，实测报 The type Int32 is undefined），
+      # 历史版本二进制又已从发布服务器清理（实测 HTTP 403），锁版本不可行。
       #
-      # 换工具链版本时不必改源码，但 fmt 检查会开始报错 ——
-      # 那时再决定是统一改写还是继续容忍。
+      # 判定方式：把「原始文件」和「fmt 后的文件」都做 Int32 -> Int 归一化，
+      # 再比内容。归一化后相同 = 差异仅是类型别名，无害。
+      #
+      # 为什么用文件级比对而不是逐行配对：
+      # 逐行统计出现次数来判断配平，在同一行文本于文件中重复出现时会数错
+      # （`sample_rate : Int,` 出现两次时计数为 4，次数一不对称就误判）。
+      # 文件级比对没有这个坑。前面两次尝试都是踩在这个细节上。
       - name: moon fmt 检查（容许 Int32 规范化差异）
         run: |
-          # 先存一份原始副本，fmt 之后再对比 ——
-          # 直接看 git diff 是不行的：fmt 已经把文件改了，
-          # 那样看到的是"改完之后的差异"，不是"哪几处需要改"。
-          mkdir -p /tmp/orig
+          mkdir -p /tmp/orig /tmp/norm_orig /tmp/norm_new
           find . -name '*.mbt' -not -path './_build/*' -exec cp --parents {} /tmp/orig/ \;
           moon fmt || true
-          echo "--- fmt 产生的改动 ---"
           changed=0
           harmful=0
           while IFS= read -r f; do
             [ -f "/tmp/orig/$f" ] || continue
             diff -q "$f" "/tmp/orig/$f" >/dev/null 2>&1 && continue
             changed=$((changed+1))
-            echo "::warning title=格式差异::$f"
-            # 判断这个文件的差异是否**仅仅**来自 Int -> Int32 规范化。
-            #
-            # 做法：把两侧的 Int32 还原成 Int，再逐行配对。
-            # 两个坑都踩过：
-            # 1. 不能只看单侧 —— `-fn f(x : Int)` 这行的左半边根本没有 Int32，
-            #    逐行过滤会把它误判成"其他差异"。
-            # 2. 还原 Int32 时不能碰注释 —— 注释里可能本来就提到 Int32
-            #    （本项目就有一段解释工具链差异的说明写着 Int32），
-            #    还原后会与另一侧对不上。
-            #
-            # 所以注释行单独比对（不还原），代码行才做还原后比对。
-            diff_out=$(diff "/tmp/orig/$f" "$f" | grep -E '^[<>]' || true)
-            code_diff=$(echo "$diff_out" | grep -vE '^[<>] *(///|//)' \
-                       | sed 's/Int32/Int/g' | sed 's/^[<>] //' \
-                       | sort | uniq -c | awk '$1 % 2 == 1')
-            comment_diff=$(echo "$diff_out" | grep -E '^[<>] *(///|//)' \
-                       | sed 's/^[<>] //' \
-                       | sort | uniq -c | awk '$1 % 2 == 1')
-            if [ -z "$code_diff" ] && [ -z "$comment_diff" ]; then
-              echo "  -> 仅 Int32 规范化，无害"
+            mkdir -p "/tmp/norm_orig/$(dirname "$f")" "/tmp/norm_new/$(dirname "$f")"
+            sed 's/Int32/Int/g' "/tmp/orig/$f" > "/tmp/norm_orig/$f"
+            sed 's/Int32/Int/g' "$f" > "/tmp/norm_new/$f"
+            if diff -q "/tmp/norm_orig/$f" "/tmp/norm_new/$f" >/dev/null; then
+              echo "  $f : 仅 Int32 规范化，无害"
             else
-              echo "  -> 存在其他格式差异："
-              diff -u "/tmp/orig/$f" "$f" | head -30 || true
+              echo "  $f : 存在其他格式差异"
+              diff -u "/tmp/norm_orig/$f" "/tmp/norm_new/$f" | head -30 || true
               harmful=$((harmful+1))
             fi
           done < <(find . -name '*.mbt' -not -path './_build/*')
-          echo "共 $changed 个文件被fmt 改写，其中 $harmful 个含 Int32 之外的差异"
+          echo "共 $changed 个文件被 fmt 改写，其中 $harmful 个含 Int32 之外的差异"
           if [ "$harmful" -gt 0 ]; then
             echo "::error title=格式问题::请本地执行 moon fmt 后提交"
             exit 1
