@@ -2,9 +2,21 @@
 
 用 MoonBit 从一段脉冲响应（impulse response）计算房间的**混响时间**、**衰减曲线**和**模态频率**。
 
-- 参赛：2026 MoonBit 黑客松（十月赛，10 月 31 日截止）
+- 参赛：2026 MoonBit 黑客松（十月赛，10 月 31 日截止报名与验收）
 - 语言：MoonBit（`preferred_target = "wasm"`）
 - 许可证：Apache-2.0
+
+## 赛程
+
+| 阶段 | 目标 | 状态 |
+|---|---|---|
+| 物理验证 | 三块算法在解析层面成立 | ✅ 完成 |
+| 骨架与验收基线 | `check` / `fmt` / `test` 三项通过 | ✅ 完成 |
+| 生态核验 | 赛道空置可复现 | ✅ 完成 |
+| EDC 反演实现 | Schroeder 积分 + 区间拟合 | 进行中 |
+| 噪声底校验 | 按 ISO 3382 判定结果可信度 | 待开始 |
+| 真实 IR 语料 | 回归测试 | 待开始 |
+| CLI 与演示 | 可复现的演示说明 | 待开始 |
 
 ---
 
@@ -58,6 +70,8 @@ moon run cmd/main -- --help
 
 ## 物理验证
 
+![物理验证基线](docs/img/verification.png)
+
 见 [`_probe/physics_probe.py`](_probe/physics_probe.py)。在写实现之前先用它确认
 公式层面成立，结论：
 
@@ -72,8 +86,21 @@ moon run cmd/main -- --help
 复现命令：
 
 ```bash
-PYTHONIOENCODING=utf-8 python _probe/physics_probe.py
+PYTHONIOENCODING=utf-8 python _probe/physics_probe.py   # 物理验证
+python docs/check_ecosystem.py                           # 生态核验（自带自检）
 ```
+
+四张图分别对应：
+
+| 图 | 说明什么 |
+|---|---|
+| 左上 EDC 曲线 | 三条已知 T60 的衰减曲线，虚线为 -5~-25 dB 拟合区间 |
+| 右上 噪声影响 | **SNR 从 60dB 掉到 20dB，T20 从 0.80s 变成 6.77s** |
+| 左下 Sabine 互验 | 解析式与反演互相印证，同时展示 Sabine 的扩散场假设 |
+| 右下 模态频率 | 轴向/切向/斜向分类，虚线为 `c/L`、`c/W`、`c/H` 三个基频 |
+
+右上这张图是本项目最重要的产品设计依据：噪声底会让 T20 偏差近 8 倍，
+因此工具**必须报告噪声底并校验评价区间有效性**，而不是照样吐一个数字。
 
 探针跑过之后发现的坑，记录在 [`NOTES.md`](NOTES.md)。
 
