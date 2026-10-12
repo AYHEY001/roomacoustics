@@ -56,30 +56,32 @@ jobs:
           moon fmt || true
           echo "--- fmt 产生的改动 ---"
           changed=0
+          harmful=0
           while IFS= read -r f; do
-            if ! diff -q "$f" "/tmp/orig/$f" >/dev/null 2>&1; then
-              echo "::warning title=格式差异::$f"
-              diff -u "/tmp/orig/$f" "$f" | head -20 || true
-              changed=$((changed+1))
+            [ -f "/tmp/orig/$f" ] || continue
+            diff -q "$f" "/tmp/orig/$f" >/dev/null 2>&1 && continue
+            changed=$((changed+1))
+            echo "::warning title=格式差异::$f"
+            # 判断这个文件的差异是否**仅仅**来自 Int -> Int32 规范化：
+            # 把两侧的 Int32 都还原成 Int，若完全相同，则差异无害。
+            # 注意不能只看单行 —— `-fn f(x : Int)` 这种行里根本没有 Int32，
+            # 逐行过滤会把它误判成"其他差异"（踩过一次）。
+            if ! diff "/tmp/orig/$f" "$f" \
+                 | grep -E '^[<>]' \
+                 | sed 's/Int32/Int/g' \
+                 | sed 's/^[<>] //' \
+                 | sort | uniq -c | awk '$1 % 2 == 1' | grep -q .; then
+              echo "  -> 仅 Int32 规范化，无害"
+            else
+              echo "  -> 存在其他格式差异："
+              diff -u "/tmp/orig/$f" "$f" | head -30 || true
+              harmful=$((harmful+1))
             fi
           done < <(find . -name '*.mbt' -not -path './_build/*')
-          echo "共 $changed 个文件需要格式化"
-          # 改动只在 Int -> Int32 这类无害规范化时不阻断；
-          # 出现其他差异说明代码真的没格式化，要让人看见。
-          if [ "$changed" -gt 0 ]; then
-            non_trivial=0
-            while IFS= read -r f; do
-              if ! diff -q "$f" "/tmp/orig/$f" >/dev/null 2>&1; then
-                if diff "/tmp/orig/$f" "$f" | grep -E '^[<>]' | grep -vE 'Int32?\b' | grep -q .; then
-                  non_trivial=$((non_trivial+1))
-                fi
-              fi
-            done < <(find . -name '*.mbt' -not -path './_build/*')
-            if [ "$non_trivial" -gt 0 ]; then
-              echo "::error title=格式问题::$non_trivial 个文件存在 Int32 规范化之外的格式差异，请本地执行 moon fmt 后提交"
-              exit 1
-            fi
-            echo "仅有 Int32 规范化差异，不阻断"
+          echo "共 $changed 个文件被fmt 改写，其中 $harmful 个含 Int32 之外的差异"
+          if [ "$harmful" -gt 0 ]; then
+            echo "::error title=格式问题::请本地执行 moon fmt 后提交"
+            exit 1
           fi
           git checkout -- . 2>/dev/null || true
 
