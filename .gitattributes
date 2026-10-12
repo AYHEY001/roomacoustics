@@ -1,0 +1,28 @@
+# 统一行尾符，避免跨平台差异
+#
+# 背景：本项目在 Windows 上开发（core.autocrlf = true），GitHub Actions 跑在 Linux。
+# 没有这个文件时，Windows 检出把 LF 转成 CRLF，Linux 检出保持 LF，
+# 于是本地 `moon fmt --check` 通过、CI 上同一份代码却失败。
+#
+# 规则：
+#   源码与配置统一用 LF（MoonBit 格式化工具按 LF 产出）
+#   Windows 批处理必须 CRLF，否则 cmd 无法执行
+
+* text=auto eol=lf
+
+*.mbt text eol=lf
+*.mbt.md text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.wasm binary
