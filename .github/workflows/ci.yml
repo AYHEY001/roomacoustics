@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 MoonBit 工具链
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: 工具链版本
+        run: moon version --all
+
+      # 全新环境注册表索引为空，缺这步会报
+      # `Failed to resolve registry dependency ... module was not found in the registry`
+      - name: 更新包索引
+        run: moon update
+
+      - name: 物理验证探针（交叉对账的基准）
+        run: |
+          python3 -m pip install --quiet numpy
+          PYTHONIOENCODING=utf-8 python3 _probe/physics_probe.py
+
+      - run: moon check --deny-warn
+      - run: moon fmt --check
+      - run: moon test --deny-warn
+
+      - name: CLI 冒烟测试
+        run: |
+          # 探针语料需要 numpy 生成；这里只验证两个纯解析子命令
+          moon run cmd/main -- sabine --length 5 --width 4 --height 2.6 --alpha 0.2
+          moon run cmd/main -- modes --count 5

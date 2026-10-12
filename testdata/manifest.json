@@ -1,0 +1,18 @@
+[
+  {
+    "name": "clean_0.4",
+    "file": "testdata/clean_0.4.json"
+  },
+  {
+    "name": "clean_0.8",
+    "file": "testdata/clean_0.8.json"
+  },
+  {
+    "name": "clean_1.6",
+    "file": "testdata/clean_1.6.json"
+  },
+  {
+    "name": "noisy_snr20",
+    "file": "testdata/noisy_snr20.json"
+  }
+]

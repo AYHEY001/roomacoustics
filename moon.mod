@@ -24,3 +24,7 @@ keywords = [ "acoustics", "audio", "reverberation", "impulse-response" ]
 preferred_target = "wasm"
 
 description = "Room acoustics measurements in MoonBit: compute reverberation time, energy decay curves and room modal frequencies from an impulse response."
+
+import {
+  "moonbitlang/x@0.5.5",
+}
