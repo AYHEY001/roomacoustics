@@ -33,51 +33,8 @@ jobs:
           PYTHONIOENCODING=utf-8 python3 _probe/physics_probe.py
 
       - run: moon check --deny-warn
+      - run: moon fmt --check
       - run: moon test --deny-warn
-
-      # fmt 检查容许 Int32 规范化差异。
-      #
-      # 背景：MoonBit 格式化器在不同版本间行为不同
-      #   本机 moon 0.1.20260920 —— `Int` 保持原样
-      #   CI装的是最新版        —— 规范化成 `Int32`
-      # 两个版本互斥（旧版不认 `Int32` 类型名，实测报 The type Int32 is undefined），
-      # 历史版本二进制又已从发布服务器清理（实测 HTTP 403），锁版本不可行。
-      #
-      # 判定方式：把「原始文件」和「fmt 后的文件」都做 Int32 -> Int 归一化，
-      # 再比内容。归一化后相同 = 差异仅是类型别名，无害。
-      #
-      # 为什么用文件级比对而不是逐行配对：
-      # 逐行统计出现次数来判断配平，在同一行文本于文件中重复出现时会数错
-      # （`sample_rate : Int,` 出现两次时计数为 4，次数一不对称就误判）。
-      # 文件级比对没有这个坑。前面两次尝试都是踩在这个细节上。
-      - name: moon fmt 检查（容许 Int32 规范化差异）
-        run: |
-          mkdir -p /tmp/orig /tmp/norm_orig /tmp/norm_new
-          find . -name '*.mbt' -not -path './_build/*' -exec cp --parents {} /tmp/orig/ \;
-          moon fmt || true
-          changed=0
-          harmful=0
-          while IFS= read -r f; do
-            [ -f "/tmp/orig/$f" ] || continue
-            diff -q "$f" "/tmp/orig/$f" >/dev/null 2>&1 && continue
-            changed=$((changed+1))
-            mkdir -p "/tmp/norm_orig/$(dirname "$f")" "/tmp/norm_new/$(dirname "$f")"
-            sed 's/Int32/Int/g' "/tmp/orig/$f" > "/tmp/norm_orig/$f"
-            sed 's/Int32/Int/g' "$f" > "/tmp/norm_new/$f"
-            if diff -q "/tmp/norm_orig/$f" "/tmp/norm_new/$f" >/dev/null; then
-              echo "  $f : 仅 Int32 规范化，无害"
-            else
-              echo "  $f : 存在其他格式差异"
-              diff -u "/tmp/norm_orig/$f" "/tmp/norm_new/$f" | head -30 || true
-              harmful=$((harmful+1))
-            fi
-          done < <(find . -name '*.mbt' -not -path './_build/*')
-          echo "共 $changed 个文件被 fmt 改写，其中 $harmful 个含 Int32 之外的差异"
-          if [ "$harmful" -gt 0 ]; then
-            echo "::error title=格式问题::请本地执行 moon fmt 后提交"
-            exit 1
-          fi
-          git checkout -- . 2>/dev/null || true
 
       - name: CLI 冒烟测试
         run: |

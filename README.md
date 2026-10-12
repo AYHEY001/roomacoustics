@@ -57,6 +57,11 @@
 
 ## 快速开始
 
+> **工具链版本**：`moon 0.1.20261012` 或更新版本。
+> 新版 `moon fmt` 会把 `Int` 规范化为 `Int32`，并对长参数列表换行——
+> 本仓库的源码已按新版格式提交。用旧版（≤ `0.1.20260920`）跑 `moon fmt` 会把它改回去，
+> 造成本地与CI 不一致。
+
 ```bash
 # Sabine 解析估算
 moon run cmd/main -- sabine --length 5 --width 4 --height 2.6 --alpha 0.2

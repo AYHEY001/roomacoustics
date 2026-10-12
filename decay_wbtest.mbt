@@ -9,12 +9,12 @@
 ///
 /// 用固定 LCG 而不是 @random：LCG 无依赖、跨平台结果一致，
 /// 同一份代码在任何机器上生成同样的 IR，测试才可复现。
-fn lcg_next(s : Int) -> Int {
+fn lcg_next(s : Int32) -> Int32 {
   (s * 1103515 + 12345) % 2147483647
 }
 
 ///|
-fn make_rng(_seed : Int) -> (Int) -> Int {
+fn make_rng(_seed : Int32) -> (Int32) -> Int32 {
   lcg_next
 }
 
@@ -24,9 +24,9 @@ fn make_rng(_seed : Int) -> (Int) -> Int {
 /// 幅值包络 `10^(-3t/T60)`，即 t=T60 时衰减 60 dB。
 fn synth_ir(
   rt60 : Double,
-  sample_rate : Int,
+  sample_rate : Int32,
   seconds : Double,
-  seed : Int,
+  seed : Int32,
 ) -> Array[Double] {
   let n = (sample_rate.to_double() * seconds).to_int()
   let out = Array(capacity=n)
@@ -56,9 +56,9 @@ fn synth_ir(
 /// 给合成 IR 叠加指定 SNR 的加性噪声。
 fn synth_noisy_ir(
   rt60 : Double,
-  sample_rate : Int,
+  sample_rate : Int32,
   seconds : Double,
-  seed : Int,
+  seed : Int32,
   snr_db : Double,
 ) -> Array[Double] {
   let ir = synth_ir(rt60, sample_rate, seconds, seed)
@@ -86,7 +86,15 @@ fn synth_noisy_ir(
 
 ///|
 /// 构造 IR：默认 0.8s T60、44.1kHz、2.5 秒。
-fn synth_fixture(rt60 : Double, sample_rate : Int, seed : Int) -> Array[Double] {
+///
+/// 签名写成多行：新版 `moon fmt` 对超过 ~75 字符的参数列表会拆行，
+/// 单行写法在 CI 上会被判定为"需要格式化"。这里直接按新版格式写，
+/// 两个工具链版本的结果就一致了。
+fn synth_fixture(
+  rt60 : Double,
+  sample_rate : Int32,
+  seed : Int32,
+) -> Array[Double] {
   synth_ir(rt60, sample_rate, 2.5, seed)
 }
 
@@ -94,7 +102,7 @@ fn synth_fixture(rt60 : Double, sample_rate : Int, seed : Int) -> Array[Double] 
 /// 构造带噪 IR，默认 SNR 20dB。
 fn synth_noisy_fixture(
   rt60 : Double,
-  sample_rate : Int,
+  sample_rate : Int32,
   snr_db : Double,
 ) -> Array[Double] {
   synth_noisy_ir(rt60, sample_rate, 2.5, 1, snr_db)

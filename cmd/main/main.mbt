@@ -14,7 +14,7 @@
 ///|
 /// 读入的脉冲响应数据。
 struct IrData {
-  sample_rate : Int
+  sample_rate : Int32
   ir : Array[Double]
 }
 
@@ -126,7 +126,7 @@ fn opt_double(
 
 ///|
 /// 从命令行取一个整数选项。
-fn opt_int(matches : @argparse.Matches, key : String, dflt : Int) -> Int {
+fn opt_int(matches : @argparse.Matches, key : String, dflt : Int32) -> Int32 {
   match matches.values.get(key) {
     Some(a) if a.length() > 0 => parse_double(a[0]).to_int()
     _ => dflt
@@ -135,7 +135,7 @@ fn opt_int(matches : @argparse.Matches, key : String, dflt : Int) -> Int {
 
 ///|
 /// 10^digits，整数循环。核心库的 `Double::pow` 已弃用，这里本也不需要浮点。
-fn pow10(digits : Int) -> Double {
+fn pow10(digits : Int32) -> Double {
   let mut s = 1.0
   let mut k = 0
   while k < digits {
@@ -150,7 +150,7 @@ fn pow10(digits : Int) -> Double {
 ///
 /// 直接用 `@double.to_string` 会输出 `68.60000000000001` 这种浮点噪声，
 /// 命令行输出给人看，必须先收拾干净。
-fn fmt(x : Double, digits : Int) -> String {
+fn fmt(x : Double, digits : Int32) -> String {
   let neg = x < 0.0
   let v = if neg { -x } else { x }
   let scaled = (v * pow10(digits) + 0.5).to_int()

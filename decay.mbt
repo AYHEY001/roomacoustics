@@ -14,7 +14,7 @@
 pub enum DecayResult {
   /// 拟合成功。字段依次为：
   /// 时间（秒）、衰减斜率（dB/s，负值）、拟合区间宽度（dB）、参与拟合的样本点数
-  Success(Double, Double, Double, Int)
+  Success(Double, Double, Double, Int32)
   /// 拟合失败。字段依次为：失败原因、评价区间到噪声底的余量（dB）
   Failed(DecayFailReason, Double?)
 } derive(Debug, Eq)
@@ -29,9 +29,9 @@ pub extend DecayResult with @debug.Debug::{to_repr}
 /// 拟合失败的原因。
 pub enum DecayFailReason {
   /// EDC 上的样本点太少，不足以拟合
-  TooFewSamples(Int)
+  TooFewSamples(Int32)
   /// 在指定区间内没有足够的样本点（区间宽度，参与点数）
-  InsufficientRangeInFit(Double, Int)
+  InsufficientRangeInFit(Double, Int32)
   /// 拟合出的斜率非负，说明能量没有在衰减 —— 输入可能不是脉冲响应
   NonDecayingSlope(Double)
   /// 评价区间落进了噪声底，结果不可信（余量 dB）
@@ -56,7 +56,7 @@ pub extend DecayFailReason with @debug.Debug::{to_repr}
 ///   ISO 3382 的要求是 20 dB。
 pub fn fit_decay_time(
   edc_db : Array[Double],
-  sample_rate : Int,
+  sample_rate : Int32,
   from_db : Double,
   to_db : Double,
   noise_floor_db? : Double,
@@ -91,7 +91,7 @@ pub fn fit_decay_time(
 /// 在指定区间收集样本并做最小二乘拟合。
 fn collect_fit(
   edc_db : Array[Double],
-  sample_rate : Int,
+  sample_rate : Int32,
   from_db : Double,
   to_db : Double,
   noise_margin : Double?,
@@ -170,14 +170,14 @@ pub struct DecayReport {
   t20 : DecayResult
   t30 : DecayResult
   noise_floor_db : Double?
-  sample_rate : Int
+  sample_rate : Int32
 }
 
 ///|
 /// 一次性拟合 EDT / T20 / T30。噪声底已知时带校验，未知时不校验。
 fn fit_all(
   edc_db : Array[Double],
-  sample_rate : Int,
+  sample_rate : Int32,
   noise_floor : Double?,
 ) -> (DecayResult, DecayResult, DecayResult) {
   match noise_floor {
@@ -204,7 +204,7 @@ fn fit_all(
 /// - `noise_tail_fraction`：估计噪声底所用的尾部比例，默认 0.1
 pub fn analyse_decay(
   ir : Array[Double],
-  sample_rate : Int,
+  sample_rate : Int32,
   noise_tail_fraction? : Double,
 ) -> DecayReport {
   let edc = energy_decay_curve(ir)

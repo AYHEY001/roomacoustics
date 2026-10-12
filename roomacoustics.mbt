@@ -30,7 +30,7 @@ pub fn modal_frequency(
   length : Double,
   width : Double,
   height : Double,
-  mode : (Int, Int, Int),
+  mode : (Int32, Int32, Int32),
 ) -> Double? {
   if length <= 0.0 || width <= 0.0 || height <= 0.0 {
     return None
@@ -52,9 +52,9 @@ pub fn modal_frequency(
 /// 一个房间模态。
 pub struct Mode {
   freq : Double
-  nx : Int
-  ny : Int
-  nz : Int
+  nx : Int32
+  ny : Int32
+  nz : Int32
   kind : String
 } derive(Debug)
 
@@ -74,7 +74,7 @@ pub fn list_modes(
   length : Double,
   width : Double,
   height : Double,
-  limit : Int,
+  limit : Int32,
 ) -> Array[Mode] {
   if length <= 0.0 || width <= 0.0 || height <= 0.0 || limit <= 0 {
     return []
@@ -130,7 +130,7 @@ pub fn list_modes(
 
 ///|
 /// 三个阶次里有几个非零。
-fn sum_positive(nx : Int, ny : Int, nz : Int) -> Int {
+fn sum_positive(nx : Int32, ny : Int32, nz : Int32) -> Int32 {
   (if nx > 0 { 1 } else { 0 }) +
   (if ny > 0 { 1 } else { 0 }) +
   (if nz > 0 { 1 } else { 0 })
