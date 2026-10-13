@@ -246,9 +246,9 @@ test "噪声底：加噪后噪声底显著抬高" {
 
 ///|
 test "噪声污染：SNR 20dB 时 T20 必须被检出为不可信" {
-  // **本项目最核心的行为**：Python 不做校验会照报 T20=6.69s（真值 0.8s）。
+  // **本项目最核心的行为**：Python 不做校验会照报 T20=8.92s（真值 0.8s）。
   // 本项目必须在评价区间落进噪声底时返回 ContaminatedByNoise，
-  // 而不是给出一个看起来正常、实际错了近 8 倍的数字。
+  // 而不是给出一个看起来正常、实际错了 11 倍的数字。
   let ir = synth_noisy_fixture(0.8, 44100, 20)
   let report = analyse_decay(ir, 44100)
   match report.t20 {

@@ -15,7 +15,7 @@ version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = ""
+repository = "https://github.com/AYHEY001/roomacoustics"
 
 license = "Apache-2.0"
 

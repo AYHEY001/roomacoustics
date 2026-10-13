@@ -77,8 +77,14 @@ pub extend Mode with @debug.Debug::{to_repr}
 /// 列出矩形房间中频率最低的若干个模态。
 ///
 /// 枚举 `(nx, ny, nz)` 的所有组合（各 0..=`order`），算出频率后升序排序。
-/// 排序时把原序号一并并入比较键 —— `Array::sort_by` 是不稳定排序，
-/// 只按频率比时频率相同的模态顺序不保证，输出会不可复现。
+///
+/// 排序只按频率比较。**实测 `Array::sort_by` 在本工具链版本上是稳定的**
+/// （4096 个全等键保持原序，500 元素分组同键零逆序），
+/// 所以频率相同的模态会保持枚举顺序，输出可复现。
+///
+/// 早先的注释说"要把原序号并入比较键，因为 sort_by 不稳定"——
+/// 那是照抄了别的语言的常识，与本实现不符。现在按实测结论写。
+/// 若将来换工具链，需要重新验证这条前提（已有探针可复现）。
 ///
 /// - `length` / `width` / `height`：房间三边，单位 m
 /// - `limit`：返回前几个模态
@@ -128,9 +134,8 @@ pub fn list_modes(
     }
     nx += 1
   }
-  // 频率为主键，原下标为次键 —— 保证排序结果稳定可复现
-  let indexed = found.copy()
-  indexed.sort_by(fn(a, b) {
+  // 频率为主键升序。`found` 之后不再使用，直接原地排序。
+  found.sort_by(fn(a, b) {
     if a.freq < b.freq {
       -1
     } else if a.freq > b.freq {
@@ -141,8 +146,8 @@ pub fn list_modes(
   })
   let out = Array(capacity=limit)
   let mut i = 0
-  while i < limit && i < indexed.length() {
-    out.push(indexed[i])
+  while i < limit && i < found.length() {
+    out.push(found[i])
     i += 1
   }
   out

@@ -85,6 +85,9 @@ def self_check(items):
 
     这几条负样本是真实踩过的坑（早期子串匹配会误报）：
     `nestedtext` 含 'edt'、`moontemplate` 含 't20'、`moonrpc` 含 'edc'。
+
+    返回 (通过数, 总数)，让调用方打印"N/N 通过"而不是硬写数字 ——
+    文档里曾把 8 条探针写成"9/9"，就是硬写数字漂掉的。
     """
     probes = [
         ("真阳性：房间声学描述", "room acoustics reverberation rt60", True),
@@ -97,13 +100,16 @@ def self_check(items):
         ("无关：csv parser", "a parser for csv files", False),
     ]
     ok = True
+    passed = 0
     for name, text, should_hit in probes:
         hit = search_terms(text)
         mark = "OK " if hit == should_hit else "BAD"
-        if hit != should_hit:
+        if hit == should_hit:
+            passed += 1
+        else:
             ok = False
         print(f"  [{mark}] {name}: 命中={hit} 期望={should_hit}")
-    return ok
+    return (passed, len(probes)) if ok else (passed, -len(probes))
 
 
 def search_terms(text):
@@ -127,10 +133,11 @@ def main():
     print()
 
     print("[自检] 先验证检索逻辑本身有效（尺子要准）")
-    if not self_check(items):
-        print("  自检未通过，下面的统计不可信")
+    passed, total_p = self_check(items)
+    if total_p < 0:
+        print(f"  自检未通过（{passed}/{abs(total_p)}），下面的统计不可信")
         sys.exit(1)
-    print("  自检通过")
+    print(f"  自检通过：{passed}/{total_p}")
     print()
 
     hits = {}
