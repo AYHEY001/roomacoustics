@@ -42,6 +42,12 @@ jobs:
       - run: moon fmt --check
       - run: moon test --deny-warn
 
+      # 断言文档里写的测试数与实际跑出来的一致。
+      # 这个数字会随加测试而变，手工同步必然漂（已经漂过一次），
+      # 漂了不报错，只会让"可核对"这句主张落空。
+      - name: 文档数字守卫（测试数须与文档一致）
+        run: PYTHONIOENCODING=utf-8 python3 docs/check_doc_numbers.py
+
       - name: CLI 冒烟测试
         run: |
           # 用仓库内已提交的语料（testdata/），不重新生成

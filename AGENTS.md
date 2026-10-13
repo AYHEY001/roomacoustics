@@ -43,6 +43,13 @@ I/O 与频谱库，意味着它的正确性可以用纯数值测试覆盖，也�
 已接入 CI。它自带自检（喂越界样本确认会被拒），不是靠自律。
 若确实需要给核心库加依赖，先改白名单并说明理由，别绕开。
 
+## 文档里的数字
+
+README / ONE_PAGER / DEMO 里写的测试数会随每次加测试而变。
+**不要手工维护**——`docs/check_doc_numbers.py` 会跑一遍 `moon test`，
+把文档里所有"NN 个测试"/"passed: NN"抓出来比对，不一致就 fail。
+已接入 CI。加完测试忘了改文档，CI 会告诉你改哪一行。
+
 ## Tooling
 
 - `moon fmt` is used to format your code properly.
