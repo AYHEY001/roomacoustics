@@ -49,6 +49,13 @@ fn parse_ir_json(text : String) -> Result[IrData, String] {
   if !has_ir {
     return Err("JSON 缺少 \"ir\" 字段")
   }
+  // 采样率必须为正。WAV 路径（load_wav_ir）已经校验了这点，
+  // JSON 路径以前没校验 —— 于是 sample_rate=0 会走到
+  // `样本数 / 0 = inf`，在 fmt 里溢出成一个荒谬的时长（约 248 天）。
+  // 两条输入路径的校验标准必须一致。
+  if sr <= 0 {
+    return Err("采样率必须是正数，实际 " + sr.to_string())
+  }
   let ir = Array(capacity=items.length())
   let mut i = 0
   while i < items.length() {
@@ -65,71 +72,125 @@ fn parse_ir_json(text : String) -> Result[IrData, String] {
 ///|
 /// 核心库没有字符串转浮点，自己按位累加解析。
 ///
-/// 格式：可选负号 + 整数部分 + 可选小数部分。
-/// 解析不出数字时返回 0.0，由调用方校验参数是否合理。
-fn parse_double(s : StringView) -> Double {
+/// 格式：可选负号 + 整数部分 + 可选小数部分。**不接受科学计数法**
+/// （`1e5` 会返回 `None` 而不是猜成 `1`）—— 猜错比报错更糟。
+///
+/// 解析不出合法数字时返回 `None`。**不要返回 `Some(0.0)`**：
+/// 那会让调用方无法区分「用户写了 0」和「用户写错了」，
+/// 于是 `--length abc` 会静默变成 0，最后报出一个看起来合法的错数字。
+fn parse_double_opt(s : StringView) -> Double? {
   let cs = s.to_array()
+  let n = cs.length()
+  if n == 0 {
+    return None
+  }
   let mut i = 0
   let mut neg = false
-  let mut seen_digit = false
-  let mut int_part = 0.0
-  let mut frac = 0.0
-  let mut scale = 0.1
-  if cs.length() > 0 && cs[0] == '-' {
+  if cs[0] == '-' {
     neg = true
     i = 1
   }
-  while i < cs.length() {
-    let c = cs[i]
-    if c == '.' {
-      i += 1
-      break
-    }
-    if c >= '0' && c <= '9' {
-      int_part = int_part * 10.0 + (c.to_int() - '0'.to_int()).to_double()
-      seen_digit = true
-    }
+  let mut int_part = 0.0
+  let mut int_digits = 0
+  while i < n && cs[i] >= '0' && cs[i] <= '9' {
+    int_part = int_part * 10.0 + (cs[i].to_int() - '0'.to_int()).to_double()
+    int_digits += 1
     i += 1
   }
-  while i < cs.length() {
-    let c = cs[i]
-    if c >= '0' && c <= '9' {
-      frac += (c.to_int() - '0'.to_int()).to_double() * scale
+  let mut frac = 0.0
+  let mut frac_digits = 0
+  if i < n && cs[i] == '.' {
+    i += 1
+    let mut scale = 0.1
+    while i < n && cs[i] >= '0' && cs[i] <= '9' {
+      frac += (cs[i].to_int() - '0'.to_int()).to_double() * scale
       scale *= 0.1
-      seen_digit = true
+      frac_digits += 1
+      i += 1
     }
-    i += 1
   }
-  if !seen_digit {
-    return 0.0
+  // 一个数字位都没有（如 "abc" / "-" / "."）→ 非法
+  if int_digits == 0 && frac_digits == 0 {
+    return None
+  }
+  // 还有剩余字符（如 "5abc" / "1e5" / "--" / "5.5.5"）→ 非法，
+  // 不静默截断。宁可让用户重打，也不猜他的意图。
+  if i != n {
+    return None
   }
   let v = int_part + frac
-  if neg {
-    -v
-  } else {
-    v
+  Some(if neg { -v } else { v })
+}
+
+///|
+/// 房间三边必须为正。非法时返回错误说明，供 CLI 打印。
+fn check_room_dims(
+  length : Double,
+  width : Double,
+  height : Double,
+) -> Result[Unit, String] {
+  if length <= 0.0 {
+    return Err("长度必须是正数，实际 " + length.to_string())
   }
+  if width <= 0.0 {
+    return Err("宽度必须是正数，实际 " + width.to_string())
+  }
+  if height <= 0.0 {
+    return Err("高度必须是正数，实际 " + height.to_string())
+  }
+  Ok(())
+}
+
+///|
+/// 平均吸声系数必须落在 (0, 1]。
+fn check_alpha(alpha : Double) -> Result[Unit, String] {
+  if alpha <= 0.0 {
+    return Err("吸声系数必须大于 0，实际 " + alpha.to_string())
+  }
+  if alpha > 1.0 {
+    return Err("吸声系数不能大于 1，实际 " + alpha.to_string())
+  }
+  Ok(())
 }
 
 ///|
 /// 从命令行取一个浮点选项。
+///
+/// 返回 `Result`：`Err` 表示选项提供了但值解析不了 —— 调用方必须报错退出。
+/// 「没提供选项」返回 `Ok(dflt)`，这是正常的。
 fn opt_double(
   matches : @argparse.Matches,
   key : String,
   dflt : Double,
-) -> Double {
+) -> Result[Double, String] {
   match matches.values.get(key) {
-    Some(a) if a.length() > 0 => parse_double(a[0])
-    _ => dflt
+    Some(a) if a.length() > 0 =>
+      match parse_double_opt(a[0]) {
+        Some(v) => Ok(v)
+        None =>
+          Err("--" + key + " 的值无法解析为数字：\"" + a[0] + "\"")
+      }
+    _ => Ok(dflt)
   }
 }
 
 ///|
 /// 从命令行取一个整数选项。
-fn opt_int(matches : @argparse.Matches, key : String, dflt : Int32) -> Int32 {
+///
+/// 同样返回 `Result`，理由见 `opt_double`。
+fn opt_int(
+  matches : @argparse.Matches,
+  key : String,
+  dflt : Int32,
+) -> Result[Int32, String] {
   match matches.values.get(key) {
-    Some(a) if a.length() > 0 => parse_double(a[0]).to_int()
-    _ => dflt
+    Some(a) if a.length() > 0 =>
+      match parse_double_opt(a[0]) {
+        Some(v) => Ok(v.to_int())
+        None =>
+          Err("--" + key + " 的值无法解析为数字：\"" + a[0] + "\"")
+      }
+    _ => Ok(dflt)
   }
 }
 
@@ -306,10 +367,44 @@ fn cmd_decay(matches : @argparse.Matches) -> Unit {
 ///|
 /// 子命令：modes
 fn cmd_modes(matches : @argparse.Matches) -> Unit {
-  let l = opt_double(matches, "length", 5.0)
-  let w = opt_double(matches, "width", 4.0)
-  let h = opt_double(matches, "height", 2.6)
-  let n = opt_int(matches, "count", 12)
+  let l = match opt_double(matches, "length", 5.0) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  let w = match opt_double(matches, "width", 4.0) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  let h = match opt_double(matches, "height", 2.6) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  let n = match opt_int(matches, "count", 12) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  // 尺寸非法时必须报错退出，不能往下走 ——
+  // 否则 list_modes 收到非正边长会返回空数组，用户看到一张空表
+  // 却不知道是自己参数写错了。
+  match check_room_dims(l, w, h) {
+    Ok(_) => ()
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
   println("=== 矩形房间模态频率 ===")
   println(
     "房间尺寸  " +
@@ -504,10 +599,48 @@ fn pad_left(s : String, width : Int32) -> String {
 ///|
 /// 子命令：sabine
 fn cmd_sabine(matches : @argparse.Matches) -> Unit {
-  let l = opt_double(matches, "length", 5.0)
-  let w = opt_double(matches, "width", 4.0)
-  let h = opt_double(matches, "height", 2.6)
-  let a = opt_double(matches, "alpha", 0.2)
+  let l = match opt_double(matches, "length", 5.0) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  let w = match opt_double(matches, "width", 4.0) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  let h = match opt_double(matches, "height", 2.6) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  let a = match opt_double(matches, "alpha", 0.2) {
+    Ok(v) => v
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  match check_room_dims(l, w, h) {
+    Ok(_) => ()
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
+  match check_alpha(a) {
+    Ok(_) => ()
+    Err(e) => {
+      println("参数错误: " + e)
+      return
+    }
+  }
   let v = l * w * h
   let s = 2.0 * (l * w + l * h + w * h)
   println("=== Sabine 估算 ===")
