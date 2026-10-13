@@ -205,7 +205,7 @@ Python 参考实现与 MoonBit 实现（各自独立的 FFT：numpy vs MoonSpect
 - [x] CLI 三个子命令（decay / modes / sabine）
 - [x] 接入 `Ridge-Lab/moonwavkit`，直接读 WAV（含立体声下混）
 - [x] 接入 `chgttyyr/MoonSpectrum`，模态频率实测交叉验证
-- [x] 回归测试（50 个，含测试有效性验证）
+- [x] 回归测试（51 个，含测试有效性验证）
 - [x] CI（check / fmt / test + CLI 冒烟）
 - [x] 可复现的演示说明（[`DEMO.md`](DEMO.md)）
 - [x] 一页项目说明（[`docs/ONE_PAGER.md`](docs/ONE_PAGER.md)）
