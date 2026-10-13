@@ -24,6 +24,25 @@ You can browse and install extra skills here:
 - Try to keep deprecated blocks in file called `deprecated.mbt` in each
   directory.
 
+## 分层约定（不要打破）
+
+核心库 `haiou/roomacoustics`（`moon.pkg` 在仓库根）**只做数值计算**：
+
+- 依赖**恰好**是 `moonbitlang/core/{math,double,debug}`，不加别的
+- 公开接口只接受 `Array[Double]` 采样点 + 采样率，不绑定数据源
+- 不碰文件、不解析格式、不做 FFT
+
+WAV 读取（`Ridge-Lab/moonwavkit`）与 FFT（`chgttyyr/MoonSpectrum`）
+都放在 CLI 层 `cmd/main/`，不进核心库。
+
+**为什么**：这条分层是本项目「边界可核对」这一主张的支撑。核心库不依赖
+I/O 与频谱库，意味着它的正确性可以用纯数值测试覆盖，也意味着替换数据源
+不影响分析逻辑。一旦有人往核心库 import 一个 I/O 库，这个主张就失效了。
+
+**怎么守住**：`docs/check_layering.py` 断言核心库依赖恰好等于白名单，
+已接入 CI。它自带自检（喂越界样本确认会被拒），不是靠自律。
+若确实需要给核心库加依赖，先改白名单并说明理由，别绕开。
+
 ## Tooling
 
 - `moon fmt` is used to format your code properly.

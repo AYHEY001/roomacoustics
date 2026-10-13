@@ -32,6 +32,12 @@ jobs:
           python3 -m pip install --quiet numpy
           PYTHONIOENCODING=utf-8 python3 _probe/physics_probe.py
 
+      # 断言核心库 moon.pkg 的依赖恰好等于白名单。
+      # moon check 只保证"能编译"，不保证"依赖没变多"——
+      # 往核心库里加 I/O 库照样能通过编译，约定会悄悄被破坏。
+      - name: 分层守卫（核心库不得依赖 I/O 与频谱库）
+        run: PYTHONIOENCODING=utf-8 python3 docs/check_layering.py
+
       - run: moon check --deny-warn
       - run: moon fmt --check
       - run: moon test --deny-warn
