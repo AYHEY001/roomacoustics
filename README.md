@@ -20,6 +20,7 @@
 | 模态交叉验证 | 接入 `MoonSpectrum`，解析式 vs 实测 | ✅ |
 | CLI 与演示 | 可复现的演示说明 | ✅ 见 [`DEMO.md`](DEMO.md) |
 | 报名材料 | 一页项目说明 | 见 [`docs/ONE_PAGER.md`](docs/ONE_PAGER.md) |
+| 报名材料 | 项目申报书 | 见 [`docs/PROJECT_APPLICATION.md`](docs/PROJECT_APPLICATION.md) |
 
 ---
 
