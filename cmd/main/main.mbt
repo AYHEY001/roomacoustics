@@ -211,7 +211,22 @@ fn pow10(digits : Int32) -> Double {
 ///
 /// 直接用 `@double.to_string` 会输出 `68.60000000000001` 这种浮点噪声，
 /// 命令行输出给人看，必须先收拾干净。
+///
+/// **非有限值单独处理**：`inf` / `-inf` / `nan` 返回同名字符串。
+/// 不处理会出洋相 —— 实测 `(inf * 100 + 0.5).to_int()` 溢出成 i32 最大值
+/// 2147483647，`fmt(inf, 2)` 输出 `21474836.47`，看着像个正常数字。
+/// 早先 JSON 输入 `sample_rate = 0` 时，时长就是这么显示成 21474836.47 秒的
+/// （采样率校验补上后不再走这条路，但 `fmt` 自身的洞得堵上）。
+///
+/// 已知限制：输入应当是物理量（频率、时间、dB、尺寸），量级有界。
+/// 超过 i32 范围的巨大数同样会溢出，这里不做科学计数法。
 fn fmt(x : Double, digits : Int32) -> String {
+  if x.is_nan() {
+    return "nan"
+  }
+  if x.is_inf() {
+    return if x > 0.0 { "inf" } else { "-inf" }
+  }
   let neg = x < 0.0
   let v = if neg { -x } else { x }
   let scaled = (v * pow10(digits) + 0.5).to_int()

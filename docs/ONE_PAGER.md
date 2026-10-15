@@ -5,7 +5,7 @@
 | **仓库** | https://github.com/AYHEY001/roomacoustics |
 | **语言 / 目标** | MoonBit，`preferred_target = "wasm"` |
 | **许可证** | Apache-2.0 |
-| **规模** | 2.8k 行 MoonBit（库 + CLI + 测试），65 个测试，CI 全绿 |
+| **规模** | 3.2k 行 MoonBit（库 + CLI + 测试），81 个测试，CI 全绿 |
 
 ## 一句话
 
@@ -98,7 +98,7 @@ AI 参与了实现、测试、文档与调试。所有技术选择与结论都�
 ```bash
 git clone https://github.com/AYHEY001/roomacoustics.git && cd roomacoustics
 moon update
-moon test --deny-warn                    # 预期 65 passed
+moon test --deny-warn                    # 预期 81 passed
 moon run cmd/main -- decay -f testdata/noisy_snr20.json   # 看它如何拒绝给数字
 moon run cmd/main -- modes --length 5 --width 4 --height 2.6 \
   --from-ir testdata/room_5x4x2.6_image_source.wav        # 看 23/23 配对

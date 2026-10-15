@@ -34,7 +34,7 @@ moon test --deny-warn
 预期输出（最后一行）：
 
 ```
-Total tests: 65, passed: 65, failed: 0.
+Total tests: 81, passed: 81, failed: 0.
 ```
 
 `moon update` 是必须的：它拉取注册表索引和两个依赖

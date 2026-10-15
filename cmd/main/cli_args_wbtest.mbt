@@ -180,3 +180,136 @@ test "吸声系数校验：必须在 (0, 1]" {
   assert_true(check_alpha(-0.1) is Err(_), msg="负 alpha 应被拒")
   assert_true(check_alpha(1.5) is Err(_), msg="alpha>1 应被拒")
 }
+
+///|
+/// 建一个只带两个选项的迷你命令，用来测 `opt_double` / `opt_int`。
+///
+/// 主程序那条 Command 定义内联在 `main` 里，测试拿不到；
+/// 但 `opt_double` 只关心 `matches.values` 里有没有对应的键，
+/// 所以另建一条键名对得上的命令就够了。
+fn mini_cmd() -> @argparse.Command {
+  @argparse.Command("mini", options=[
+    @argparse.OptionArg("length", long="length", about="长度"),
+    @argparse.OptionArg("count", long="count", about="个数"),
+  ])
+}
+
+///|
+/// 解析一段 argv，失败返回 None。
+///
+/// `catch` 块只覆盖抛异常那条路径，成功路径仍是 `Matches`，
+/// 所以要在 let 上标注类型，否则推断不出来（踩过一次）。
+fn parse_mini(argv : Array[String]) -> @argparse.Matches? {
+  let m : @argparse.Matches = mini_cmd().parse(argv~) catch { _ => return None }
+  Some(m)
+}
+
+///|
+test "opt_double：提供了合法值就取该值" {
+  let m = match parse_mini(["--length", "5.5"]) {
+    Some(v) => v
+    None => {
+      assert_true(false, msg="parse 不该失败")
+      return
+    }
+  }
+  match opt_double(m, "length", 1.0) {
+    Ok(v) => assert_eq(v, 5.5)
+    Err(e) => assert_true(false, msg="应解析成功，实际报错：" + e)
+  }
+}
+
+///|
+test "opt_double：未提供该选项时用默认值" {
+  let m = match parse_mini(["--count", "3"]) {
+    Some(v) => v
+    None => {
+      assert_true(false, msg="parse 不该失败")
+      return
+    }
+  }
+  match opt_double(m, "length", 4.0) {
+    Ok(v) => assert_eq(v, 4.0)
+    Err(e) => assert_true(false, msg="未提供时不该报错：" + e)
+  }
+}
+
+///|
+test "opt_double：提供了非法值时报错而不是当默认值" {
+  // 这是 fail-fast 的核心：用户写了 `--length abc`，
+  // 不能悄悄退回默认值 5.0，那会让他以为参数生效了。
+  let m = match parse_mini(["--length", "abc"]) {
+    Some(v) => v
+    None => {
+      assert_true(false, msg="parse 不该失败")
+      return
+    }
+  }
+  match opt_double(m, "length", 5.0) {
+    Ok(v) =>
+      assert_true(
+        false,
+        msg="非法值不该解析成功，却得到 " + v.to_string(),
+      )
+    Err(e) =>
+      assert_true(
+        e.contains("length") && e.contains("abc"),
+        msg="错误信息应含选项名与原始值，实际：" + e,
+      )
+  }
+}
+
+///|
+test "opt_int：合法、缺失、非法三种情形" {
+  let ok = match parse_mini(["--count", "7"]) {
+    Some(v) => v
+    None => {
+      assert_true(false, msg="parse 不该失败")
+      return
+    }
+  }
+  match opt_int(ok, "count", 12) {
+    Ok(v) => assert_eq(v, 7)
+    Err(e) => assert_true(false, msg="应解析成功，实际：" + e)
+  }
+  // 缺失走默认值
+  match opt_int(ok, "length", 12) {
+    Ok(v) => assert_eq(v, 12)
+    Err(e) => assert_true(false, msg="未提供时不该报错：" + e)
+  }
+  // 非法值报错
+  let bad = match parse_mini(["--count", "xyz"]) {
+    Some(v) => v
+    None => {
+      assert_true(false, msg="parse 不该失败")
+      return
+    }
+  }
+  match opt_int(bad, "count", 12) {
+    Ok(v) =>
+      assert_true(
+        false,
+        msg="非法值不该解析成功，却得到 " + v.to_string(),
+      )
+    Err(e) =>
+      assert_true(e.contains("count"), msg="错误应含选项名：" + e)
+  }
+}
+
+///|
+test "opt_double：小数被截断成整数时不静默取整" {
+  // `opt_int` 走的是 parse_double_opt 再 to_int()。
+  // "2.6" 是合法小数，取整得 2 —— 这是有意的行为（用户可能写 --count 5.0）。
+  // 但纯字母应当报错，不能被当成 0。
+  let m = match parse_mini(["--count", "2.6"]) {
+    Some(v) => v
+    None => {
+      assert_true(false, msg="parse 不该失败")
+      return
+    }
+  }
+  match opt_int(m, "count", 12) {
+    Ok(v) => assert_eq(v, 2)
+    Err(e) => assert_true(false, msg="2.6 应能解析，实际：" + e)
+  }
+}

@@ -60,7 +60,7 @@ roomacoustics 用 MoonBit 实现房间声学测量的核心计算：从一段脉
 ```bash
 git clone https://github.com/AYHEY001/roomacoustics.git && cd roomacoustics
 moon update
-moon test --deny-warn        # 预期 65 passed
+moon test --deny-warn        # 预期 81 passed
 moon run cmd/main -- decay -f testdata/noisy_snr20.json
 moon run cmd/main -- modes --length 5 --width 4 --height 2.6 \
   --from-ir testdata/room_5x4x2.6_image_source.wav
@@ -77,10 +77,10 @@ moon run cmd/main -- modes --length 5 --width 4 --height 2.6 \
 
 | 项 | 值 |
 |---|---|
-| 提交数 | 22（截至 2026-10-14） |
-| 测试 | 65，全部通过 |
-| 代码规模 | 2785 行 MoonBit（库 + CLI + 测试） |
+| 提交数 | 23（截至 2026-10-15） |
+| 测试 | 81，全部通过 |
+| 代码规模 | 3195 行 MoonBit（库 + CLI + 测试） |
 | 许可证 | Apache-2.0 |
 | 目标平台 | wasm |
 | CI | 全绿 |
-| 开发记录 | 8 个 Issue，已关闭 4 个。其中两个是实质缺陷：非法参数曾静默按 0 处理并报出错误数字；模态配对的判别力边界曾被高估，现已量化并写入 README |
+| 开发记录 | 8 个 Issue，已关闭 5 个。其中两个是实质缺陷：非法参数曾静默按 0 处理并报出错误数字；模态配对的判别力边界曾被高估，现已量化并写入 README |

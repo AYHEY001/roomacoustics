@@ -13,6 +13,8 @@ pkgtype(kind: "executable")
 
 // math 只在白盒测试里用（构造已知频率的正弦做自检），
 // 主包代码不需要，所以按目标声明，避免 unused_package 警告。
+// double 同理：测试里要构造 inf / -inf / nan 来验 fmt 的边界处理。
 import {
   "moonbitlang/core/math",
+  "moonbitlang/core/double",
 } for "wbtest"
