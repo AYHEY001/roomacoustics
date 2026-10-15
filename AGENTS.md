@@ -77,3 +77,19 @@ README / ONE_PAGER / DEMO 里写的测试数会随每次加测试而变。
   scientific computations), prefer assertion tests. You can use
   `moon coverage analyze > uncovered.log` to see which parts of your code are
   not covered by tests.
+
+- **断言字符串时用 `assert_eq`，别用 `debug_inspect`**。后者比的是带引号的
+  Debug 形式，对字符串会多一层引号，写期望值容易对不上（实测踩过）。
+
+## 提交前检查（Git Hook）
+
+仓库带了 `pre-commit` hook，跑 `moon check --deny-warn` 与 `moon fmt --check`。
+`core.hooksPath` 是本地配置，**每个 clone 都要设置一次**：
+
+```bash
+chmod +x .githooks/pre-commit
+git config core.hooksPath .githooks
+```
+
+细节见 [`.githooks/README.md`](.githooks/README.md)。找不到 `moon` 时 hook 会
+提示并放行，不会让提交莫名失败；完整检查（含测试）由 CI 负责。

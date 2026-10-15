@@ -1,3 +1,35 @@
 #!/bin/sh
+#
+# 提交前的快速检查。
+#
+# 这里只放跑得快的两项：
+#   moon check --deny-warn   挡编译错误与警告
+#   moon fmt --check         挡格式问题（CI 会严格检查这一项）
+#
+# 不跑 moon test：全量测试要几秒，提交前每次都等不合适，
+# 而且 CI 在 push 后就会跑完整的 check / fmt / test + CLI 冒烟。
+# 本 hook 的定位是"让明显的问题在本地就被挡下"，不是替代 CI。
+#
+# 确实需要跳过时用 `git commit --no-verify`，但 CI 仍会拦下来。
 
-moon check
+if ! command -v moon >/dev/null 2>&1; then
+  echo "pre-commit: 没找到 moon 命令，跳过本地检查（CI 仍会检查）。"
+  echo "  若用隔离安装，先设好 PATH 与 MOON_HOME —— 见 AGENTS.md。"
+  exit 0
+fi
+
+echo "pre-commit: moon check --deny-warn"
+if ! moon check --deny-warn; then
+  echo "pre-commit: check 未通过，提交已阻止。"
+  echo "  排查后可重试，或确认要跳过时用 git commit --no-verify。"
+  exit 1
+fi
+
+echo "pre-commit: moon fmt --check"
+if ! moon fmt --check; then
+  echo "pre-commit: 代码格式不符合 moon fmt 的结果。"
+  echo "  运行 moon fmt 后再提交。"
+  exit 1
+fi
+
+echo "pre-commit: 通过。"
